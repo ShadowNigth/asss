@@ -66,6 +66,7 @@ func _build_world() -> void:
 	effects.name = "Effects"
 	add_child(effects)
 	match_state = MatchState.new()
+	match_state.bomb_exploded.connect(_on_bomb_exploded)
 	match_state.name = "MatchState"
 	add_child(match_state)
 	_build_light_entities()
@@ -117,6 +118,24 @@ func _build_agents() -> void:
 		_spawn_bot("t", index)
 	for index in team_ct:
 		_spawn_bot("ct", index + team_t)
+	_assign_bomb()
+
+
+func _assign_bomb() -> void:
+	## One T carries the C4; half the CTs spawn with a defuse kit, as in retail.
+	var terrorists: Array = []
+	for agent in bots:
+		if agent.team == "t":
+			terrorists.append(agent)
+	if not terrorists.is_empty():
+		var carrier: BotAgent = terrorists[randi() % terrorists.size()]
+		carrier.bomb_carrier = true
+		carrier.has_bomb = true
+		if match_state != null:
+			match_state.bomb_carrier = carrier.display_name
+	for agent in bots:
+		if agent.team == "ct":
+			agent.has_defuse_kit = randf() < 0.5
 
 
 func _spawn_bot(team: String, index: int) -> void:
@@ -127,6 +146,7 @@ func _spawn_bot(team: String, index: int) -> void:
 	agent.setup(bot_names[index % bot_names.size()], team, index)
 	agent.reset_actor(spawn, team)
 	agent.configure(Cfg.BOT_SKILL + randf_range(-0.12, 0.12), _bot_loadout(team))
+	agent.match_state = match_state
 	agent.add_to_group("damageable")
 	bots.append(agent)
 	agents.append(agent)
@@ -189,6 +209,19 @@ func _build_ui() -> void:
 	scoreboard.setup(self, match_state)
 
 
+func _on_bomb_exploded() -> void:
+	## Everything inside the blast radius dies; armour does not help.
+	var radius := Cfg.BOMB_DAMAGE_RADIUS * Cfg.U2M
+	for agent in agents:
+		if agent == null or not is_instance_valid(agent) or not agent.alive:
+			continue
+		var distance: float = agent.global_position.distance_to(match_state.bomb_position)
+		if distance > radius:
+			continue
+		var falloff := clampf(1.0 - distance / radius, 0.15, 1.0)
+		agent.apply_damage(int(500.0 * falloff), "C4", false)
+
+
 func _on_player_died(killer: String) -> void:
 	if hud != null:
 		hud.show_death(killer)
@@ -238,9 +271,20 @@ func _emit_telemetry(delta: float) -> void:
 			lowest = minf(lowest, value)
 			highest = maxf(highest, value)
 		ys = " y=[%.2f..%.2f]" % [lowest, highest]
-	print("[telemetry] t=%.0f %s alive t=%d ct=%d bomb=%s moving=%d/%d grounded=%d%s dead=%s %s" % [
-		boot_time, match_state.status_line(), match_state.alive["t"], match_state.alive["ct"],
-		match_state.bomb_state, moving, bots.size(), grounded, ys, ",".join(dead), " ".join(names)])
+	var objective := ""
+	if match_state.bomb_state == "planted":
+		objective = " site=%s fuse=%.1f pos=%s" % [
+			match_state.bomb_site, match_state.bomb_timer,
+			str(match_state.bomb_position.snapped(Vector3(0.1, 0.1, 0.1)))]
+	elif match_state.bomb_state == "carried":
+		objective = " carrier=%s" % match_state.bomb_carrier
+	else:
+		objective = " result=%s" % match_state.bomb_state
+	print("[telemetry] t=%.0f %s score=%d:%d alive t=%d ct=%d bomb=%s%s moving=%d/%d grounded=%d%s dead=%s %s" % [
+		boot_time, match_state.status_line(), match_state.score_t, match_state.score_ct,
+		match_state.alive["t"], match_state.alive["ct"],
+		match_state.bomb_state, objective, moving, bots.size(), grounded, ys,
+		",".join(dead), " ".join(names)])
 
 
 func _update_agents(delta: float) -> void:

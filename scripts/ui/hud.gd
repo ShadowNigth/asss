@@ -98,6 +98,17 @@ func _process(delta: float) -> void:
 	if match_state != null:
 		timer_label.text = match_state.status_line()
 		money_label.text = "$%d" % int(match_state.money.get(player.team, 0))
+		# The bomb is the round's clock: show the planted site and start the
+		# timer flashing red as the fuse runs down.
+		if match_state.bomb_state == "planted":
+			timer_label.text = "C4 %s  %.1fs" % [match_state.bomb_site, match_state.bomb_timer]
+			var urgency := clampf(1.0 - match_state.bomb_timer / 10.0, 0.0, 1.0)
+			timer_label.modulate = Color(1.0, 1.0 - urgency * 0.75, 1.0 - urgency * 0.75)
+			var blink := fmod(Time.get_ticks_msec() / 1000.0, 0.5) < 0.25
+			timer_label.visible = match_state.bomb_timer > 10.0 or blink
+		else:
+			timer_label.modulate = Color.WHITE
+			timer_label.visible = true
 	if Input.is_action_just_pressed("toggle_fps"):
 		show_fps = not show_fps
 		fps_label.visible = show_fps

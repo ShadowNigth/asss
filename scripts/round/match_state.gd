@@ -26,6 +26,9 @@ var score_ct := 0
 var bomb_state := "carried"  # carried | planted | defused | exploded | dropped
 var bomb_timer := 0.0
 var bomb_site := ""
+## Where the C4 lies once planted (Godot space), and who can pick it up again.
+var bomb_position := Vector3.ZERO
+var bomb_carrier := ""
 var round_time := Cfg.ROUND_TIME
 var buy_time_left := Cfg.BUY_TIME
 var loss_streak := {"t": 0, "ct": 0}
@@ -54,6 +57,8 @@ func _begin_freeze() -> void:
 	bomb_state = "carried"
 	bomb_timer = 0.0
 	bomb_site = ""
+	bomb_position = Vector3.ZERO
+	bomb_carrier = ""
 	phase_changed.emit(PHASE_NAMES[phase])
 	round_started.emit(round_number, phase_time)
 
@@ -122,11 +127,13 @@ func _finish_match() -> void:
 	phase_changed.emit(PHASE_NAMES[phase])
 
 
-func plant_bomb(site: String) -> bool:
+func plant_bomb(site: String, position: Vector3 = Vector3.ZERO) -> bool:
 	if bomb_state != "carried" or phase != Phase.LIVE:
 		return false
 	bomb_state = "planted"
 	bomb_site = site
+	bomb_position = position
+	bomb_carrier = ""
 	bomb_timer = Cfg.BOMB_TIMER
 	bomb_planted.emit(site, bomb_timer)
 	return true
@@ -158,6 +165,9 @@ func set_alive_counts(t_count: int, ct_count: int) -> void:
 	alive["ct"] = ct_count
 	if phase != Phase.LIVE:
 		return
+	# A planted C4 keeps a round alive even after the last terrorist dies, but
+	# only until the fuse runs out; if it is still being carried when the last
+	# T falls the bomb is lost and CT wins on elimination.
 	if t_count == 0 and bomb_state != "planted":
 		end_round("ct", "terrorists eliminated")
 	elif ct_count == 0:

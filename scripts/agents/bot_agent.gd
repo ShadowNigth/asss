@@ -31,6 +31,11 @@ var strafe_timer := 0.0
 var frozen := false
 ## Lateral bias (-1..1) applied to the walk vector so bots do not stack.
 var approach_offset := 0.0
+## Bomb objective: the T carrying the C4, and the CT with a defuse kit.
+var bomb_carrier := false
+var has_defuse_kit := false
+var match_state: MatchState
+var _action_timer := 0.0
 
 
 func configure(skill_value: float, weapons: Array) -> void:
@@ -54,6 +59,10 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		return
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	reaction = maxf(0.0, reaction - delta)
+	# Objective first: a T standing in a site with the C4 plants it, and a CT
+	# standing on a planted C4 defuses. Both actions are interruptible.
+	if _run_objective(delta, site_positions):
+		return
 	var enemy := _closest_visible(enemies)
 	if enemy != null:
 		state = State.ENGAGE
@@ -66,16 +75,117 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 	# no target: keep walking the current goal
 	if state == State.HOLD and target_position.distance_to(global_position) < 2.0:
 		return
+	# A planted C4 overrides every other goal: CTs converge on it, Ts guard it.
+	if match_state != null and match_state.bomb_state == "planted":
+		if team == "ct":
+			if global_position.distance_to(match_state.bomb_position) < 1.6:
+				state = State.DEFUSE
+				return
+			target_position = match_state.bomb_position
+		else:
+			var guard := match_state.bomb_position
+			var away := global_position - guard
+			away.y = 0.0
+			if away.length() < 6.0 and away.length() > 0.1:
+				target_position = guard + away.normalized() * 7.0
+			else:
+				target_position = guard
+		state = State.ADVANCE
+		_walk_to(target_position, delta)
+		return
+
 	var desired := goal_site
 	if desired.is_empty() and not site_positions.is_empty():
 		var keys := site_positions.keys()
 		keys.sort()
+		# The C4 carrier picks the site the whole T side commits to, so the team
+		# does not split up and leave the bomb unprotected.
 		goal_site = str(keys[randi() % keys.size()])
 		desired = goal_site
 	if not desired.is_empty() and site_positions.has(desired):
 		target_position = site_positions[desired]
 		state = State.ADVANCE
 	_walk_to(target_position, delta)
+
+
+func _run_objective(delta: float, site_positions: Dictionary) -> bool:
+	## Returns true when the bot is busy planting/defusing this frame.
+	if match_state == null or match_state.phase != MatchState.Phase.LIVE:
+		_cancel_action()
+		return false
+	if team == "t" and bomb_carrier and match_state.bomb_state == "carried":
+		var site := _site_at(global_position, site_positions)
+		if site.is_empty():
+			_action_timer = 0.0
+			return false
+		state = State.PLANT
+		_action_timer += delta
+		velocity.x = 0.0
+		velocity.z = 0.0
+		_hold_still(delta)
+		if _action_timer >= Cfg.BOMB_PLANT_TIME:
+			match_state.plant_bomb(site, global_position)
+			bomb_carrier = false
+			has_bomb = false
+			_cancel_action()
+		return true
+	if team == "ct" and match_state.bomb_state == "planted":
+		if global_position.distance_to(match_state.bomb_position) > 1.6:
+			_cancel_action()
+			return false
+		state = State.DEFUSE
+		_action_timer += delta
+		velocity.x = 0.0
+		velocity.z = 0.0
+		_hold_still(delta)
+		var need: float = Cfg.BOMB_DEFUSE_KIT_TIME if has_defuse_kit else Cfg.BOMB_DEFUSE_TIME
+		if _action_timer >= need:
+			match_state.defuse_bomb()
+			_cancel_action()
+		return true
+	_cancel_action()
+	return false
+
+
+func _hold_still(delta: float) -> void:
+	if not is_on_floor():
+		velocity.y -= Cfg.GRAVITY * Cfg.U2M * delta
+	else:
+		velocity.y = -0.1
+	move_and_slide()
+
+
+func _cancel_action() -> void:
+	_action_timer = 0.0
+	if state == State.PLANT or state == State.DEFUSE:
+		state = State.ADVANCE
+
+
+func is_planting() -> bool:
+	return state == State.PLANT
+
+
+func is_defusing() -> bool:
+	return state == State.DEFUSE
+
+
+## Radius in metres inside which a T may plant on a site.
+const PLANT_RADIUS := 7.0
+
+
+func _site_at(position: Vector3, site_positions: Dictionary) -> String:
+	## The bombsite name whose centre is close enough to plant at.
+	for name in site_positions.keys():
+		var centre: Vector3 = site_positions[name]
+		var flat := centre - position
+		flat.y = 0.0
+		if flat.length() <= PLANT_RADIUS:
+			return str(name)
+	return ""
+
+
+func plant_time_left() -> float:
+	return maxf(0.0, Cfg.BOMB_PLANT_TIME - _action_timer)
 
 
 func _walk_to(target: Vector3, delta: float) -> void:
