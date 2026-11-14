@@ -64,6 +64,33 @@ WEATHER_BY_SKY = {
 
 
 # ---------------------------------------------------------------- entities
+def _entity_yaw(entity: Entity) -> float:
+    """Point-entity yaw in degrees.
+
+    Player spawns in CS 1.5 carry ``angles`` ("pitch yaw roll"); older builds
+    and many other entities only store a scalar ``angle``.  Reading ``angle``
+    alone leaves every spawn facing yaw 0, i.e. into a wall.
+    """
+    if "angles" in entity.properties:
+        parts = entity.properties["angles"].split()
+        if len(parts) >= 2:
+            try:
+                return float(parts[1])
+            except ValueError:
+                pass
+    return entity.number("angle", 0.0)
+
+
+def _spawn_yaw(entity: Entity) -> float:
+    """GoldSrc yaw -> Godot Y rotation.
+
+    GoldSrc angles count counter-clockwise from +X (``0`` faces east, ``90``
+    faces north); Godot's ``rotation.y`` counts clockwise from -Z.  Both are
+    the same handedness in practice, so the conversion is ``yaw - 90``.
+    """
+    return _entity_yaw(entity) - 90.0
+
+
 def _vec3(entity: Entity, key: str) -> list[float]:
     return list(entity.vec(key))
 
@@ -183,7 +210,7 @@ def extract_entities(bsp: Bsp) -> dict:
         cls = entity.classname
         raw_origin = _vec3(entity, "origin")
         origin = [raw_origin[0] * SCALE, raw_origin[2] * SCALE, -raw_origin[1] * SCALE]
-        yaw = entity.number("angle", 0.0)
+        yaw = _spawn_yaw(entity)
         if cls in ("info_player_start", "info_player_deathmatch", "info_player_terrorist"):
             spawns.append({"pos": origin, "yaw": yaw, "team": "t" if cls.endswith("terrorist") else "any"})
         elif cls == "info_player_counterterrorist":
