@@ -67,6 +67,7 @@ func _build_world() -> void:
 	add_child(effects)
 	match_state = MatchState.new()
 	match_state.bomb_exploded.connect(_on_bomb_exploded)
+	match_state.round_started.connect(_on_round_started)
 	match_state.name = "MatchState"
 	add_child(match_state)
 	_build_light_entities()
@@ -121,8 +122,31 @@ func _build_agents() -> void:
 	_assign_bomb()
 
 
+func _on_round_started(_number: int, _freeze: float) -> void:
+	## New round: everyone is alive again and back on a spawn, the C4 is back
+	## on a terrorist and the CT defuse kits are re-rolled.
+	_respawn_team("t")
+	_respawn_team("ct")
+	if player != null and is_instance_valid(player):
+		player.teleport_to(map_loader.spawn_for_index("t", 0))
+	_assign_bomb()
+
+
+func _respawn_team(team: String) -> void:
+	var slot := 0
+	for agent in bots:
+		if agent.team != team:
+			continue
+		agent.reset_actor(map_loader.spawn_for_index(team, slot + 1), team)
+		slot += 1
+
+
 func _assign_bomb() -> void:
 	## One T carries the C4; half the CTs spawn with a defuse kit, as in retail.
+	for agent in bots:
+		agent.bomb_carrier = false
+		agent.has_bomb = false
+		agent.frozen = false
 	var terrorists: Array = []
 	for agent in bots:
 		if agent.team == "t":

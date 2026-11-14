@@ -197,9 +197,15 @@ func aim_direction() -> Vector3:
 
 
 func teleport_to(spawn: Dictionary) -> void:
+	# A round restart also revives the player; without this the corpse flag and
+	# the frozen body carry over and the player never moves again.
+	alive = true
+	health = 100
 	global_position = spawn.get("pos", Vector3.ZERO)
 	body.global_position = global_position
 	yaw = deg_to_rad(float(spawn.get("yaw", 0.0)))
 	rotation.y = yaw
 	pitch = 0.0
 	body.velocity = Vector3.ZERO
+	body.frozen = false
+	health_changed.emit(health, armor)
