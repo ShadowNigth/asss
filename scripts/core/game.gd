@@ -154,11 +154,14 @@ func _bake_navigation() -> void:
 	# ROOT_NODE_CHILDREN source would parse the (empty) region and bake nothing.
 	nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
 	nav_mesh.geometry_source_group_name = NAV_SOURCE_GROUP
-	nav_mesh.cell_size = 0.25
-	nav_mesh.cell_height = 0.25
-	nav_mesh.agent_radius = Cfg.HULL_RADIUS * Cfg.U2M
-	nav_mesh.agent_height = Cfg.HULL_HEIGHT * Cfg.U2M
-	nav_mesh.agent_max_climb = 0.35
+	# Keep every voxel-derived property a whole number of cells, otherwise the
+	# baker rounds them and neighbouring polygons end up sharing edges.
+	var cell := 0.25
+	nav_mesh.cell_size = cell
+	nav_mesh.cell_height = cell
+	nav_mesh.agent_radius = ceilf(Cfg.HULL_RADIUS * Cfg.U2M / cell) * cell
+	nav_mesh.agent_height = ceilf(Cfg.HULL_HEIGHT * Cfg.U2M / cell) * cell
+	nav_mesh.agent_max_climb = floorf(0.35 / cell) * cell
 	nav_mesh.agent_max_slope = 46.0
 	nav_mesh.region_min_size = 4.0
 	navigation_region.navigation_mesh = nav_mesh
