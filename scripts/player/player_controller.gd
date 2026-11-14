@@ -66,10 +66,11 @@ func _create_body() -> void:
 	collider.name = "Collider"
 	body.add_child(collider)
 	add_child(body)
+	# The body simulates in world space and the rig simply follows it; without
+	# `top_level` the parent's own motion would feed back into the body and
+	# double every displacement (it made the player fall through the map).
+	body.top_level = true
 	body.global_position = global_position
-	# keep the body where the spawn says, the rig rides on top of it
-	body.top_level = false
-	global_position = body.global_position
 
 
 func _create_camera() -> void:

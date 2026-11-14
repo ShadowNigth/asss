@@ -65,6 +65,9 @@ const MAX_BOTS := 9
 const DEFAULT_BOTS := 7
 const BOT_SKILL := 0.55
 const SUN_SHAFTS_ENABLED := true
+# GoldSrc composites  texture × lightmap × 2 ; 1.9 keeps bright sand bright
+# without clipping the concrete in shadow.
+const WORLD_LIGHT_BOOST := 1.9
 
 # --- CLI / runtime flags (populated in _ready) ----------------------------
 var map_name: String = DEFAULT_MAP

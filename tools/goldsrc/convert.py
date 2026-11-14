@@ -559,11 +559,24 @@ class AtlasPacker:
 
 
 def _png(image) -> bytes:
+    """Encode a PNG, palette-indexing fully opaque images.
+
+    GoldSrc textures are 8-bit palettised to begin with, so quantising back to
+    a 256-colour palette is lossless in practice (and ~3x smaller on disk);
+    masked ``{`` textures keep their alpha channel as RGBA.
+    """
     import io
 
     buffer = io.BytesIO()
+    if image.mode == "RGBA" and _is_opaque(image):
+        image = image.convert("RGB").convert("P", palette=0, colors=255)
     image.save(buffer, format="PNG", optimize=True, compress_level=9)
     return buffer.getvalue()
+
+
+def _is_opaque(image) -> bool:
+    alpha = image.getchannel("A")
+    return alpha.getextrema() == (255, 255)
 
 
 # ---------------------------------------------------------------- writer

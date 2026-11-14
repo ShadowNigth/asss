@@ -9,14 +9,14 @@ extends WorldEnvironment
 
 var sun: DirectionalLight3D
 var panorama_sky: PanoramaSkyMaterial
-var environment: Environment
 var weather := "clear"
 
 
 func setup(sky: Dictionary, quality: String) -> void:
 	weather = str(sky.get("weather", "clear"))
-	environment = Environment.new()
-	environment.background_mode = Environment.BG_SKY
+	var env := Environment.new()
+	environment = env
+	env.background_mode = Environment.BG_SKY
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = _color(sky.get("zenith", [0.4, 0.5, 0.7]))
 	environment.ambient_light_energy = _ambient_energy(weather)

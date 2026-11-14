@@ -9,6 +9,9 @@ extends RefCounted
 ##              u8 vec3 colours   | i32 vec3 indices
 ##   per water face: i32 verts, i32 tris | f32 vec3 positions | i32 vec3 indices
 
+const MAGIC := "CS15MAP"
+const FORMAT_VERSION := 1
+
 var map_name := ""
 var header: Dictionary = {}
 var materials: Array = []
@@ -25,8 +28,8 @@ var sky: Dictionary = {}
 var error := ""
 
 
-func load_map(slug: String) -> bool:
-	var path := Cfg.map_payload_path(slug)
+func load_map(path: String) -> bool:
+	var slug := path.get_file().get_basename()
 	if not FileAccess.file_exists(path):
 		error = "missing map payload: %s" % path
 		return false
@@ -35,7 +38,7 @@ func load_map(slug: String) -> bool:
 		error = "cannot open %s" % path
 		return false
 	var magic := file.get_buffer(8)
-	if magic.size() < 8 or magic.get_string_from_ascii() != "CS15MAP\x01":
+	if magic.size() < 8 or magic.slice(0, 7).get_string_from_ascii() != MAGIC or magic[7] != FORMAT_VERSION:
 		error = "%s is not a csmap payload" % path
 		return false
 	var header_len := file.get_32()

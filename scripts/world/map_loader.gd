@@ -9,6 +9,7 @@ extends Node3D
 ## zero-area triangles that make the physics engine unhappy).
 
 const COLLISION_EPSILON := 1e-9
+const WORLD_SHADER := "res://shaders/world.gdshader"
 
 var map_data: MapData
 var world_root: Node3D
@@ -20,16 +21,13 @@ var stats := {}
 
 func build(map_name: String) -> bool:
 	map_data = MapData.new()
-	if not map_data.load_map(map_name):
+	if not map_data.load_map(Cfg.map_payload_path(map_name)):
 		push_error(map_data.error)
 		return false
 	_clear()
 	world_root = Node3D.new()
 	world_root.name = "Geometry"
 	add_child(world_root)
-	_build_geometry()
-	_build_collision()
-	_build_water()
 	stats = {
 		"groups": map_data.groups.size(),
 		"triangles": 0,
@@ -38,6 +36,9 @@ func build(map_name: String) -> bool:
 	}
 	for group in map_data.groups:
 		stats["triangles"] += int(group["tris"])
+	_build_geometry()
+	_build_collision()
+	_build_water()
 	return true
 
 
@@ -74,22 +75,41 @@ func _build_geometry() -> void:
 
 
 func _material_for(info: Dictionary) -> Material:
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.vertex_color_is_srgb = false
-	material.roughness = 0.92
-	material.metallic = 0.0
-	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED if bool(info.get("transparent", false)) else BaseMaterial3D.CULL_BACK
+	## GoldSrc surfaces are unlit: the lightmap already contains every light,
+	## so the world shader multiplies albedo by the baked vertex colour and
+	## skips the engine's dynamic lighting entirely.
+	var transparent := bool(info.get("transparent", false))
+	var shader := load(WORLD_SHADER) as Shader
+	if shader == null:
+		return _fallback_material(info)
+	var material := ShaderMaterial.new()
+	material.shader = shader
 	var path := str(info.get("file", ""))
 	if not path.is_empty() and ResourceLoader.exists(path):
 		var texture := load(path) as Texture2D
 		if texture != null:
-			material.albedo_texture = texture
-	if bool(info.get("emissive", false)):
-		material.emission_enabled = true
-		material.emission = Color(1.0, 0.88, 0.62)
-		material.emission_energy_multiplier = 0.9
+			material.set_shader_parameter("albedo_tex", texture)
+	material.set_shader_parameter("emissive", bool(info.get("emissive", false)))
+	material.set_shader_parameter("light_boost", Cfg.WORLD_LIGHT_BOOST)
+	material.set_shader_parameter("alpha_scale", 0.72 if transparent else 1.0)
+	material.set_shader_parameter("tint", Color(1.0, 1.0, 1.0))
+	if transparent:
+		material.render_priority = 1
+		# masked surfaces (fences, gratings) are drawn double-sided in retail
+		material.set_shader_parameter("alpha_scale", 0.72)
+	return material
+
+
+func _fallback_material(info: Dictionary) -> Material:
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.vertex_color_is_srgb = false
+	material.roughness = 0.92
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED if bool(info.get("transparent", false)) else BaseMaterial3D.CULL_BACK
+	var path := str(info.get("file", ""))
+	if not path.is_empty() and ResourceLoader.exists(path):
+		material.albedo_texture = load(path) as Texture2D
 	if bool(info.get("transparent", false)):
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		material.albedo_color.a = 0.75

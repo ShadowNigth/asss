@@ -107,6 +107,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fetch", action="store_true", help="sparse-clone the CS 1.5 retail branch")
     parser.add_argument("--cstrike", type=Path, help="existing cstrike/ directory to read maps and WADs from")
+    parser.add_argument("--wads", type=Path, nargs="*", default=[],
+                        help="extra WAD directories (e.g. valve/ with halflife.wad)")
     parser.add_argument("--out", type=Path, default=ROOT, help="project root that receives assets/maps")
     parser.add_argument("--maps", default="", help="comma separated map list (default: every de_* bombsite map)")
     parser.add_argument("--all", action="store_true", help="convert every de_* map found")
@@ -133,7 +135,7 @@ def main() -> int:
         return 2
 
     palette_path = args.palette if args.palette.exists() else None
-    palette = load_palette(palette_path) if palette_path else bytes(768)
+    palette = load_palette(palette_path) if palette_path else b""
     if palette_path is None:
         print("warning: palette.lmp missing, embedded miptex will use a grey palette", file=sys.stderr)
 
@@ -145,6 +147,8 @@ def main() -> int:
             wanted = [name for name in DEFAULT_MAPS if name in wanted] or wanted
 
     wads = wad_files(cstrike)
+    for extra in args.wads or []:
+        wads.extend(p for p in wad_files(Path(extra)) if p not in wads)
     env_dir = cstrike / "gfx" / "env"
     results = []
     print(f"converting {len(wanted)} maps from {cstrike} ({len(wads)} wads)")

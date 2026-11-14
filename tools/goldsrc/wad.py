@@ -17,12 +17,34 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
+from .palette import choose, decode, normalise
+
 
 def load_palette(path: Path) -> bytes:
     data = Path(path).read_bytes()
     if len(data) < 768:
         raise ValueError(f"{path} is not a 768-byte palette")
     return data[:768]
+
+
+def _name_variants(name: str):
+    """Yield the plausible WAD spellings of a BSP texture name."""
+    yield name
+    candidates = []
+    # the stamp is exactly two characters: +0 -0 +a -a +1 -1 ...
+    candidates.append(name[2:])
+    # names pasted into the BSP sometimes lose/gain the { masked prefix
+    if name[:1] in "+-":
+        candidates.append(name[3:] if name[2:3] == "~" else name[2:].lstrip("~"))
+    for candidate in list(candidates):
+        candidates.append(candidate.lstrip("{"))
+        candidates.append(candidate.lstrip("~"))
+        candidates.append(candidate.lstrip("~{").lstrip("{~"))
+    seen = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            yield candidate
 
 
 class Wad:
@@ -40,14 +62,33 @@ class Wad:
             pos, disk_size, size, typ, _comp = struct.unpack("<iiIBB", self.data[base:base + 14])
             name = self.data[base + 16:base + 32].split(b"\x00")[0].decode("latin-1")
             self.entries.append((name, pos, disk_size, size, typ))
-        self.palette = palette
+        self.palette = palette if palette is not None and len(palette) >= 768 else None
         self._by_name = {name.lower(): (pos, size, typ) for name, pos, _d, size, typ in self.entries}
 
     def has(self, name: str) -> bool:
-        return name.lower() in self._by_name
+        return self.resolve_name(name) is not None
+
+    def resolve_name(self, name: str) -> str | None:
+        """Map a BSP texture name onto the actual WAD lump.
+
+        Embedded miptex names carry the BSP's lighting/mirror stamp, which is
+        always two leading characters (``+0``, ``-a``, ``+1``), optionally
+        followed by ``~`` (fullbright).  The WAD stores the bare name, and a
+        ``{`` prefix marks a masked texture in both places.
+        """
+        key = name.lower()
+        if key in self._by_name:
+            return key
+        for candidate in _name_variants(key):
+            if candidate in self._by_name:
+                return candidate
+        return None
 
     def read_miptex(self, name: str):
-        entry = self._by_name.get(name.lower())
+        key = self.resolve_name(name)
+        if key is None:
+            return None
+        entry = self._by_name.get(key)
         if entry is None:
             return None
         pos, size, typ = entry
@@ -64,31 +105,34 @@ class Wad:
         if start == 0 or start + width * height > len(blob):
             return None
         mip0 = blob[start:start + width * height]
+        embedded_palette = None
         palette_at = start
         for level in range(4):
             if offsets[level] == 0:
                 break
             palette_at = offsets[level] + (width >> level) * (height >> level)
-        palette = blob[palette_at:palette_at + 768] if palette_at + 768 <= len(blob) else self.palette
+        # the mip chain is followed by a uint16 paletteCount and then the
+        # palette itself, exactly like the BSP TEXTURE lump
+        if palette_at + 2 <= len(blob):
+            count = struct.unpack("<H", blob[palette_at:palette_at + 2])[0]
+            if 2 <= count <= 256 and palette_at + 2 + count * 3 <= len(blob):
+                embedded_palette = blob[palette_at + 2:palette_at + 2 + 768]
+        # every miptex in these WADs carries its own palette; the standalone
+        # palette.lmp is Quake's ramp and only a last-resort fallback
+        palette = embedded_palette or self.palette
         if palette is None or len(palette) < 768:
             return None
         return width, height, mip0, palette
 
     def rgba(self, name: str, palette: bytes | None = None):
+        """Decode a miptex, choosing the best of the candidate palettes."""
         result = self.read_miptex(name)
         if result is None:
             return None
-        width, height, indices, pal = result
-        lookup = pal if len(pal) >= 768 else (palette or self.palette)
-        if lookup is None:
+        width, height, indices, embedded = result
+        table = normalise(embedded)
+        if table is None:
+            table, _score = choose(indices, width, height, [palette, self.palette])
+        if table is None:
             return None
-        table = bytes(lookup)
-        rgba = bytearray(width * height * 4)
-        for i, index in enumerate(indices):
-            src = index * 3
-            dst = i * 4
-            rgba[dst] = table[src]
-            rgba[dst + 1] = table[src + 1]
-            rgba[dst + 2] = table[src + 2]
-            rgba[dst + 3] = 0 if index == 255 else 255
-        return width, height, bytes(rgba)
+        return width, height, decode(indices, width, height, table)

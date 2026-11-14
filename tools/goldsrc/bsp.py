@@ -18,6 +18,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
+from .palette import best_global, decode, normalise
 from .textures import ResolvedTexture
 
 SCALE = 0.0254
@@ -80,14 +81,30 @@ class Entity:
 
 
 class MipTex:
-    __slots__ = ("name", "width", "height", "offsets", "index")
+    __slots__ = ("name", "width", "height", "offsets", "index", "base", "palette")
 
-    def __init__(self, name: str, width: int, height: int, offsets: tuple[int, ...], index: int) -> None:
+    def __init__(self, name: str, width: int, height: int, offsets: tuple[int, ...],
+                 index: int, base: int = 0) -> None:
         self.name = name
         self.width = width
         self.height = height
         self.offsets = offsets
         self.index = index
+        # absolute position of this miptex inside the TEXTURE lump; the
+        # per-lump offsets below are relative to it
+        self.base = base
+        # 768-byte palette stored straight after this miptex (None when the
+        # texture has none of its own)
+        self.palette: bytes | None = None
+
+    @property
+    def mip_end(self) -> int:
+        """Absolute offset just past the last mip level of this texture."""
+        end = self.base + self.offsets[0]
+        for level in range(4):
+            if self.offsets[level]:
+                end = self.base + self.offsets[level] + (self.width >> level) * (self.height >> level)
+        return end
 
     @property
     def is_water(self) -> bool:
@@ -116,6 +133,8 @@ class Bsp:
         self._parse_faces()
         self._parse_texinfo()
         self._parse_models()
+        self.palette_source = ""
+        self.palette_score = 0.0
 
     # -------------------------------------------------------------- lumps
     def lump(self, index: int) -> bytes:
@@ -155,7 +174,30 @@ class Bsp:
             name = raw[offset:offset + 16].split(b"\x00")[0].decode("latin-1")
             width, height = struct.unpack("<II", raw[offset + 16:offset + 24])
             mip_offsets = struct.unpack("<IIII", raw[offset + 24:offset + 40])
-            self.textures.append(MipTex(name, width, height, mip_offsets, index))
+            self.textures.append(MipTex(name, width, height, mip_offsets, index, offset))
+        self._parse_embedded_palettes(raw)
+
+    def _parse_embedded_palettes(self, raw: bytes) -> None:
+        """Read the per-texture palette that follows each embedded miptex.
+
+        A mip chain is stored as: 4 mip levels, then ``uint16 paletteCount``
+        (always 256 for CS 1.5), then ``paletteCount * 3`` palette bytes.
+        The count word is what makes the real palette start 2 bytes after the
+        end of the mip data - treating that as alignment padding is wrong.
+        """
+        for mip in self.textures:
+            if mip.offsets[0] == 0:
+                continue
+            end = mip.mip_end
+            if end + 2 > len(raw):
+                continue
+            count = struct.unpack("<H", raw[end:end + 2])[0]
+            if not 2 <= count <= 256:
+                continue
+            stop = end + 2 + count * 3
+            if stop > len(raw):
+                continue
+            mip.palette = raw[end + 2:end + 2 + 768] if count == 256 else raw[end + 2:stop].ljust(768, b"\x00")
 
     def _parse_vertices(self) -> None:
         raw = self.lump(LUMP_VERTICES)
@@ -308,6 +350,7 @@ class Bsp:
             s_shift, t_shift = vecs[3], vecs[7]
             extents = self.lightmap_extents(face)
             baked = self.lightmap_bytes(face)
+            light_pixels = baked[1] if baked is not None else None
             base = group["verts"]
             plane_normal = self._plane_normal(face)
             for index in verts:
@@ -318,13 +361,13 @@ class Bsp:
                 s = (x * su[0] + y * su[1] + z * su[2] + s_shift) / width
                 t = (y * sv[1] + x * sv[0] + z * sv[2] + t_shift) / height
                 group["uv"].extend((s, -t))
-                if extents is not None and baked is not None:
+                if extents is not None and light_pixels is not None:
                     lm_s = (x * su[0] + y * su[1] + z * su[2] + s_shift)
                     lm_t = (y * sv[1] + x * sv[0] + z * sv[2] + t_shift)
                     u = (lm_s - extents["mins"][0]) / 16.0
                     v = (lm_t - extents["mins"][1]) / 16.0
                     group["uv2"].extend((u / extents["width"], v / extents["height"]))
-                    sample = _sample_lightmap(baked, extents["width"], extents["height"], u, v)
+                    sample = _sample_lightmap(light_pixels, extents["width"], extents["height"], u, v)
                     if flags & 1:
                         sample = tuple(int(c * 255) for c in sky_color)
                     group["colors"].extend(sample)
@@ -373,25 +416,44 @@ class Bsp:
             out.append((points, indices))
         return out
 
+    def palette_candidates(self) -> list[tuple[str, bytes]]:
+        """Every per-texture palette stored inside the TEXTURE lump."""
+        return [(mip.name, mip.palette) for mip in self.textures if mip.palette]
+
     def embedded_textures(self, palette: bytes) -> dict[str, ResolvedTexture]:
         """Decode the miptex pixels that live inside the BSP itself."""
         raw = self.lump(LUMP_TEXTURES)
-        out: dict[str, ResolvedTexture] = {}
+        decoded: list[tuple[MipTex, bytes]] = []
+        samples: list[tuple[bytes, int, int]] = []
         for mip in self.textures:
             if mip.offsets[0] == 0:
                 continue
-            start = mip.offsets[0]
+            start = mip.base + mip.offsets[0]
             if start + mip.width * mip.height > len(raw):
                 continue
             indices = raw[start:start + mip.width * mip.height]
-            palette_at = mip.offsets[0]
-            for level in range(4):
-                if mip.offsets[level]:
-                    palette_at = mip.offsets[level] + (mip.width >> level) * (mip.height >> level)
-            pal = raw[palette_at:palette_at + 768] if palette_at + 768 <= len(raw) else palette
-            if len(pal) < 768:
-                continue
-            out[mip.name.lower()] = _indexed_to_rgba(mip.name, mip.width, mip.height, indices, pal)
+            decoded.append((mip, indices))
+            if mip.width >= 64 and mip.height >= 64:
+                samples.append((indices, mip.width, mip.height))
+        candidates = self.palette_candidates()
+        if palette:
+            candidates.append(("standalone", bytes(palette)))
+        table, score, source = best_global(candidates, samples)
+        # each texture carries its own palette; the global pick is only the
+        # fallback for lumps that have none (and for the shared sky ramp)
+        self.palette_source = source
+        self.palette_score = score
+        out: dict[str, ResolvedTexture] = {}
+        if table is None:
+            return out
+        for mip, indices in decoded:
+            # a miptex with its own palette is authoritative: the uint16 count
+            # in front of it is structural proof, unlike any heuristic score
+            own = normalise(mip.palette) if mip.palette else table
+            out[mip.name.lower()] = ResolvedTexture(
+                mip.name, mip.width, mip.height,
+                decode(indices, mip.width, mip.height, own),
+                "bsp", mip.name.startswith("{"))
         return out
 
 
@@ -408,6 +470,24 @@ def _indexed_to_rgba(name: str, width: int, height: int, indices: bytes, palette
 
 
 def _sample_lightmap(baked: bytes, width: int, height: int, u: float, v: float) -> tuple[int, int, int]:
+    """Bilinear sample of a GoldSrc lightmap block (compact 8-bit RGBRGB...)."""
+    x = max(0.0, min(float(width - 1), u))
+    y = max(0.0, min(float(height - 1), v))
+    x0, y0 = int(x), int(y)
+    x1, y1 = min(x0 + 1, width - 1), min(y0 + 1, height - 1)
+    fx, fy = x - x0, y - y0
+    out = []
+    for channel in range(3):
+        def texel(px: int, py: int) -> float:
+            index = (py * width + px) * 3 + channel
+            return float(baked[index]) if index < len(baked) else 168.0
+        top = texel(x0, y0) * (1.0 - fx) + texel(x1, y0) * fx
+        bottom = texel(x0, y1) * (1.0 - fx) + texel(x1, y1) * fx
+        out.append(int(round(top * (1.0 - fy) + bottom * fy)))
+    return (out[0], out[1], out[2])
+
+
+def _sample_lightmap_point(baked: bytes, width: int, height: int, u: float, v: float) -> tuple[int, int, int]:
     x = max(0, min(width - 1, int(u + 0.5)))
     y = max(0, min(height - 1, int(v + 0.5)))
     index = (y * width + x) * 3

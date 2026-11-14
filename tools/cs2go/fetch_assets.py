@@ -86,23 +86,45 @@ def validate(path: Path) -> dict:
 		"meshes": len(doc.get("meshes", [])),
 		"nodes": len(doc.get("nodes", [])),
 		"animations": [a.get("name", "") for a in doc.get("animations", [])],
-		"extensions": doc.get("extensionsRequired", []),
+		"extensions_before": doc.get("extensionsRequired", []),
 		"images": len(doc.get("images", [])),
 	}
 
 
-def normalise(path: Path, info: dict) -> dict:
-	"""Dequantise/decimate incompatible payloads with gltf-transform, if present."""
-	needs = any(ext in ["KHR_mesh_quantization", "EXT_meshopt_compression"] for ext in info["extensions"])
-	if not needs or shutil.which("gltf-transform") is None:
-		return info
-	tmp = path.with_suffix(".tmp.glb")
-	subprocess.run(["gltf-transform", "copy", str(path), str(tmp)], check=True,
-				   capture_output=True)
-	subprocess.run(["gltf-transform", "dequantize", str(tmp), str(path)], check=True,
-				   capture_output=True)
-	tmp.unlink(missing_ok=True)
-	return validate(path)
+# Godot 4.4's glTF importer rejects EXT_texture_webp, KHR_mesh_quantization and
+# EXT_meshopt_compression; the CS2 mirror requires all three.  Each model is
+# normalised with the gltf-transform CLI plus a small Node script that swaps the
+# WebP images for PNGs.
+WEBP_SCRIPT = Path(__file__).resolve().parent / "glb_webp_to_png.js"
+
+
+def transform_binary() -> str | None:
+	return shutil.which("gltf-transform")
+
+
+def normalise(path: Path) -> dict:
+	binary = transform_binary()
+	if binary is None:
+		raise RuntimeError("gltf-transform is required: npm install @gltf-transform/cli")
+	tmp_a = path.with_suffix(".a.glb")
+	tmp_b = path.with_suffix(".b.glb")
+	tmp_c = path.with_suffix(".c.glb")
+	run([binary, "copy", str(path), str(tmp_a)])
+	run([binary, "dequantize", str(tmp_a), str(tmp_b)])
+	run(["node", str(WEBP_SCRIPT), str(tmp_b), str(tmp_c)])
+	shutil.move(str(tmp_c), str(path))
+	for leftover in (tmp_a, tmp_b):
+		leftover.unlink(missing_ok=True)
+	info = validate(path)
+	if info["extensions_before"]:
+		raise RuntimeError(f"{path.name}: unsupported extensions remain: {info['extensions_before']}")
+	return info
+
+
+def run(cmd: list[str]) -> None:
+	result = subprocess.run(cmd, capture_output=True, text=True)
+	if result.returncode != 0:
+		raise RuntimeError(f"{Path(cmd[0]).name} failed: {result.stderr[-300:]}")
 
 
 def main() -> int:
@@ -123,7 +145,7 @@ def main() -> int:
 		target = args.out / rel
 		try:
 			size = download(f"{API_ROOT}/{rel}", target)
-			info = normalise(target, validate(target))
+			info = normalise(target)
 		except Exception as error:  # noqa: BLE001 - report and continue
 			print(f"  FAILED {rel}: {error}", file=sys.stderr)
 			failures += 1

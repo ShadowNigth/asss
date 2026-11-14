@@ -1,0 +1,10 @@
+.cache/
+*.tmp
+*.log
+godot/
+.godot/
+export/
+*.uid
+*.import
+__pycache__/
+*.pyc

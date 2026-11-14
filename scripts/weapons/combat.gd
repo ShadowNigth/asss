@@ -40,14 +40,18 @@ func fire(weapon_id: String, origin: Vector3, direction: Vector3, inaccuracy_deg
 	return total_damage
 
 
+func _space() -> PhysicsDirectSpaceState3D:
+	return (get_parent() as Node3D).get_world_3d().direct_space_state
+
+
 func _trace(weapon_id: String, data: Dictionary, origin: Vector3, direction: Vector3) -> int:
-	var space := get_world_3d().direct_space_state
+	var space := _space()
 	var max_range := float(data.get("range", 100.0))
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * max_range, hitscan_mask)
 	if owner_controller != null and owner_controller.body != null:
 		query.exclude = [owner_controller.body.get_rid()]
 	query.collide_with_areas = false
-	var hit := space.intersect_ray(query)
+	var hit: Dictionary = space.intersect_ray(query)
 	if hit.is_empty():
 		shot_fired.emit(origin, origin + direction * max_range, false, null)
 		return 0

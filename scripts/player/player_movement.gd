@@ -29,7 +29,7 @@ var wish_dir := Vector3.ZERO
 var jump_queued := false
 var last_jump_time := -10.0
 var fall_velocity := 0.0
-var step_height := 18.0 * Cfg.U2M
+var step_height := 0.4572
 var gravity_scale := 1.0
 
 var _bob := 0.0
@@ -39,6 +39,7 @@ var _time := 0.0
 
 
 func _ready() -> void:
+	step_height = 18.0 * Cfg.U2M
 	floor_max_angle = deg_to_rad(46.5)
 	floor_snap_length = 4.0 * Cfg.U2M
 	floor_stop_on_slope = false
@@ -67,7 +68,7 @@ func set_intent(move_dir: Vector3, crouch: bool, jump: bool, walk: bool = false)
 		set_ducking(crouch)
 	if jump:
 		jump_queued = true
-	speed_modifier = Cfg.MAXSPEED_WALK / Cfg.MAXSPEED if walk else 1.0
+	speed_modifier = (Cfg.MAXSPEED_WALK / Cfg.MAXSPEED) if walk else 1.0
 
 
 func set_ducking(value: bool) -> void:
@@ -239,9 +240,9 @@ func _update_environment(delta: float) -> void:
 
 func _water_surface(at: Vector3) -> float:
 	var parent := get_parent()
-	if parent == null:
+	if parent == null or parent.get_parent() == null:
 		return NAN
-	var loader := parent.get_node_or_null("MapLoader") as MapLoader
+	var loader := parent.get_parent().get_node_or_null("MapLoader") as MapLoader
 	if loader == null:
 		return NAN
 	return loader.water_surface_at(at)
@@ -251,16 +252,17 @@ func _update_ladder() -> void:
 	ladder_normal = Vector3.ZERO
 	if not is_inside_tree():
 		return
-	var space := get_world_3d().direct_space_state
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var forwards := -global_transform.basis.z
-	for probe in [Vector3(0, 0.9, 0), Vector3(0, 0.1, 0), Vector3(0, -0.6, 0)]:
-		var from := global_position + probe
+	var probes: Array[Vector3] = [Vector3(0, 0.9, 0), Vector3(0, 0.1, 0), Vector3(0, -0.6, 0)]
+	for probe in probes:
+		var from: Vector3 = global_position + probe
 		var query := PhysicsRayQueryParameters3D.create(from, from + forwards * 0.5, 1)
 		query.exclude = [get_rid()]
-		var hit := space.intersect_ray(query)
+		var hit: Dictionary = space.intersect_ray(query)
 		if hit.is_empty():
 			continue
-		var collider := hit.get("collider")
+		var collider: Object = hit.get("collider")
 		if collider == null:
 			continue
 		if str(collider.get_meta("surface", "")) in ["ladder", "trigger_ladder"]:

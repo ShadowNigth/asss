@@ -120,12 +120,12 @@ func _closest_visible(enemies: Array) -> Node3D:
 
 
 func _can_see(enemy: Node3D) -> bool:
-	var space := get_world_3d().direct_space_state
+	var space: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
 	var from := eye_position()
 	var to := enemy.global_position + Vector3.UP * 1.4
 	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
 	query.exclude = [get_rid()]
-	var hit := space.intersect_ray(query)
+	var hit: Dictionary = space.intersect_ray(query)
 	if hit.is_empty():
 		return true
 	var collider := hit.get("collider") as Node
@@ -182,7 +182,7 @@ func _fire(enemy: Node3D) -> void:
 	var aim := (dir + right * sin(rotation) * tan(angle) + up * cos(rotation) * tan(angle)).normalized()
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + aim * float(data.get("range", 60.0)), 1 | (1 << 1))
 	query.exclude = [get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
 		return
 	var collider := hit.get("collider") as Node
@@ -192,7 +192,7 @@ func _fire(enemy: Node3D) -> void:
 	while victim != null:
 		if victim.has_method("apply_damage") and victim != self:
 			var damage := int(data.get("damage", 20))
-			var headshot := (hit["position"] as Vector3).y > victim.global_position.y + 1.5
+			var headshot: bool = (hit["position"] as Vector3).y > victim.global_position.y + 1.5
 			if headshot:
 				damage = int(damage * Cfg.HEADSHOT_MULTIPLIER)
 			victim.call("apply_damage", damage, display_name, headshot)
