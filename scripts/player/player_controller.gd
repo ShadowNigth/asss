@@ -1,0 +1,204 @@
+class_name PlayerController
+extends Node3D
+## First-person rig: movement body + `Camera3D` + viewmodel + weapon handling.
+##
+## The controller never touches map geometry directly: it feeds input to
+## `PlayerMovement` (physics tick) and the camera/viewmodel follow the body in
+## `_process`, so mouse look stays smooth at monitor refresh rate.
+
+signal weapon_changed(id: String)
+signal health_changed(health: int, armor: int)
+signal died(killer: String)
+
+const MOUSE_SENSITIVITY := 0.0022
+const PITCH_LIMIT := deg_to_rad(89.0)
+const VIEWMODEL_FOV := 54.0
+
+var body: PlayerMovement
+var camera: Camera3D
+var viewmodel: ViewModel
+var weapon_manager: WeaponManager
+var combat: Combat
+
+var health := 100
+var armor := 0
+var helmet := false
+var team := "t"
+var player_name := "player"
+var alive := true
+var mouse_captured := false
+var yaw := 0.0
+var pitch := 0.0
+var recoil_offset := Vector2.ZERO
+var fov_target := Cfg.FOV
+var zoom_level := 0
+
+var _mouse_blocked := false
+
+
+func setup(spawn: Dictionary, team_name: String, allow_mouse: bool) -> void:
+	team = team_name
+	player_name = "Player"
+	global_position = spawn.get("pos", Vector3.ZERO)
+	yaw = deg_to_rad(float(spawn.get("yaw", 0.0)))
+	rotation.y = yaw
+	_create_body()
+	_create_camera()
+	_create_viewmodel()
+	weapon_manager = WeaponManager.new()
+	weapon_manager.name = "WeaponManager"
+	add_child(weapon_manager)
+	weapon_manager.setup(self)
+	combat = Combat.new()
+	combat.name = "Combat"
+	add_child(combat)
+	combat.setup(self)
+	_mouse_blocked = not allow_mouse
+	if allow_mouse and not Cfg.headless_display and not Cfg.no_mouse:
+		capture_mouse()
+	health_changed.emit(health, armor)
+
+
+func _create_body() -> void:
+	body = PlayerMovement.new()
+	body.name = "Body"
+	var collider := CollisionShape3D.new()
+	collider.name = "Collider"
+	body.add_child(collider)
+	add_child(body)
+	body.global_position = global_position
+	# keep the body where the spawn says, the rig rides on top of it
+	body.top_level = false
+	global_position = body.global_position
+
+
+func _create_camera() -> void:
+	camera = Camera3D.new()
+	camera.name = "Camera"
+	camera.fov = Cfg.FOV
+	camera.near = 0.03
+	camera.far = 900.0
+	camera.current = true
+	add_child(camera)
+
+
+func _create_viewmodel() -> void:
+	viewmodel = ViewModel.new()
+	viewmodel.name = "Viewmodel"
+	camera.add_child(viewmodel)
+	viewmodel.position = Vector3(0.14, -0.14, -0.28)
+	viewmodel.setup(camera)
+
+
+func capture_mouse() -> void:
+	if _mouse_blocked or Cfg.headless_display:
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	mouse_captured = true
+
+
+func release_mouse() -> void:
+	if Cfg.headless_display:
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	mouse_captured = false
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and mouse_captured:
+		var motion := event as InputEventMouseMotion
+		yaw -= motion.relative.x * MOUSE_SENSITIVITY * (1.0 / maxf(0.3, zoom_level_scale()))
+		pitch = clampf(pitch - motion.relative.y * MOUSE_SENSITIVITY, -PITCH_LIMIT, PITCH_LIMIT)
+	elif event is InputEventMouseButton and event.pressed and not mouse_captured:
+		if not _mouse_blocked:
+			capture_mouse()
+	elif event.is_action_pressed("pause"):
+		if mouse_captured:
+			release_mouse()
+		else:
+			capture_mouse()
+
+
+func zoom_level_scale() -> float:
+	if zoom_level <= 0:
+		return 1.0
+	return 0.55
+
+
+func _process(delta: float) -> void:
+	if body == null:
+		return
+	global_position = body.global_position
+	rotation.y = yaw
+	var eye := body.eye_height()
+	var bob := body.bob_offset()
+	camera.position = bob + Vector3(0.0, eye, 0.0)
+	recoil_offset = recoil_offset.lerp(Vector2.ZERO, clampf(delta * 7.0, 0.0, 1.0))
+	camera.rotation = Vector3(pitch + recoil_offset.y, recoil_offset.x, 0.0)
+	camera.fov = lerpf(camera.fov, fov_target, clampf(delta * 8.0, 0.0, 1.0))
+	if viewmodel != null:
+		viewmodel.tick(delta, body.velocity, body.on_ground)
+
+
+func _physics_process(delta: float) -> void:
+	if body == null or not alive:
+		return
+	var input_dir := Vector2.ZERO
+	if body.input_enabled and mouse_captured or (body.input_enabled and Cfg.no_mouse):
+		input_dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var forward := -global_transform.basis.z
+	var right := global_transform.basis.x
+	var wish := (right * input_dir.x + forward * -input_dir.y)
+	if wish.length() > 1.0:
+		wish = wish.normalized()
+	body.set_intent(wish, Input.is_action_pressed("crouch"), Input.is_action_just_pressed("jump"), Input.is_action_pressed("walk"))
+	if weapon_manager != null:
+		weapon_manager.tick(delta, Input.is_action_pressed("fire"), Input.is_action_just_pressed("fire"),
+			Input.is_action_pressed("alt_fire"), Input.is_action_just_pressed("reload"))
+
+
+func apply_damage(amount: int, from: String = "", headshot: bool = false) -> void:
+	if not alive:
+		return
+	var damage := amount
+	if armor > 0:
+		var absorbed := clampf(float(amount) * Cfg.ARMOR_ABSORB, 0.0, float(armor))
+		armor = maxi(0, armor - int(absorbed * Cfg.ARMOR_BONUS))
+		damage = amount - int(absorbed * (1.0 - Cfg.ARMOR_BONUS))
+	health -= damage
+	health_changed.emit(maxi(health, 0), armor)
+	if health <= 0:
+		alive = false
+		health = 0
+		body.frozen = true
+		died.emit(from)
+
+
+func heal(amount: int) -> void:
+	health = mini(100, health + amount)
+	health_changed.emit(health, armor)
+
+
+func add_armor(amount: int, with_helmet: bool) -> void:
+	armor = mini(100, armor + amount)
+	helmet = helmet or with_helmet
+	health_changed.emit(health, armor)
+
+
+func eye_position() -> Vector3:
+	return camera.global_position if camera != null else global_position + Vector3.UP * 1.6
+
+
+func aim_direction() -> Vector3:
+	if camera == null:
+		return -global_transform.basis.z
+	return -camera.global_transform.basis.z
+
+
+func teleport_to(spawn: Dictionary) -> void:
+	global_position = spawn.get("pos", Vector3.ZERO)
+	body.global_position = global_position
+	yaw = deg_to_rad(float(spawn.get("yaw", 0.0)))
+	rotation.y = yaw
+	pitch = 0.0
+	body.velocity = Vector3.ZERO

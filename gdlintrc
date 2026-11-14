@@ -1,0 +1,23 @@
+# gdtoolkit 4.x configuration
+class-definitions-order:
+  - tools
+  - classnames
+  - extends
+  - docstrings
+  - signals
+  - enums
+  - consts
+  - exports
+  - pubvars
+  - prvvars
+  - onready
+  - others
+max-line-length: 140
+max-file-lines: 1200
+max-public-methods: 40
+max-returns: 8
+disable:
+  - unused-argument
+  - class-definitions-order
+  - max-public-methods
+  - max-returns
