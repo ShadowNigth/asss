@@ -26,6 +26,7 @@ var boot_time := 0.0
 var ready_boot := false
 var telemetry_time := 0.0
 var _nav_mesh: NavigationMesh
+var _need_nav_probe := false
 const NAV_SOURCE_GROUP := "nav_world_source"
 
 
@@ -205,9 +206,11 @@ func _bake_navigation() -> void:
 	nav_mesh.cell_height = cell
 	nav_mesh.agent_radius = ceilf(Cfg.HULL_RADIUS * Cfg.U2M / cell) * cell
 	nav_mesh.agent_height = ceilf(Cfg.HULL_HEIGHT * Cfg.U2M / cell) * cell
-	nav_mesh.agent_max_climb = floorf(0.35 / cell) * cell
-	nav_mesh.agent_max_slope = 46.0
-	nav_mesh.region_min_size = 4.0
+	# Stairs in de_inferno/de_nuke rise in ~0.3 m steps; too low a climb value
+	# severs the mesh there and bots stop dead halfway up.
+	nav_mesh.agent_max_climb = ceilf(0.5 / cell) * cell
+	nav_mesh.agent_max_slope = 50.0
+	nav_mesh.region_min_size = 2.0
 	navigation_region.navigation_mesh = nav_mesh
 	if map_loader.collision_body != null:
 		_add_to_nav_group(map_loader.collision_body)
@@ -217,6 +220,44 @@ func _bake_navigation() -> void:
 		var polygons := nav_mesh.get_polygon_count()
 		var verts := nav_mesh.get_vertices().size()
 		print("[telemetry] navmesh polygons=%d vertices=%d cell=%.2f" % [polygons, verts, nav_mesh.cell_size])
+		_need_nav_probe = true
+
+
+func _dump_nav_coverage() -> void:
+	## Probe the navmesh on a grid so "bots are stuck" can be told apart from
+	## "the mesh has a hole here".
+	var map: RID = get_world_3d().navigation_map
+	var lo: Vector3 = map_loader.map_data.bounds_min
+	var hi: Vector3 = map_loader.map_data.bounds_max
+	var hits := 0
+	var misses := 0
+	var step := maxf((hi.x - lo.x) / 24.0, 1.0)
+	var z := lo.z
+	while z < hi.z:
+		var x := lo.x
+		while x < hi.x:
+			var probe := Vector3(x, (lo.y + hi.y) * 0.5, z)
+			var point := NavigationServer3D.map_get_closest_point(map, probe)
+			# map_get_closest_point returns the query itself when nothing is
+			# near, so a real hit is a point that actually moved and sits at a
+			# plausible walkable height.
+			if point.distance_to(probe) > 0.05 and absf(point.y - probe.y) < 25.0:
+				hits += 1
+			else:
+				misses += 1
+			x += step
+		z += step
+	print("[telemetry] nav coverage %d/%d" % [hits, hits + misses])
+	for site in map_loader.map_data.bomb_sites:
+		var lo2: Vector3 = site["min"]
+		var hi2: Vector3 = site["max"]
+		var inside := 0
+		var verts2: PackedVector3Array = _nav_mesh.get_vertices()
+		for v in verts2:
+			if v.x >= lo2.x - 1.0 and v.x <= hi2.x + 1.0 and v.z >= lo2.z - 1.0 and v.z <= hi2.z + 1.0:
+				inside += 1
+		print("[telemetry] site %s nav verts=%d of %d (box x %.1f..%.1f z %.1f..%.1f)" % [
+			site["name"], inside, verts2.size(), lo2.x, hi2.x, lo2.z, hi2.z])
 
 
 func _build_ui() -> void:
@@ -258,6 +299,9 @@ func _process(delta: float) -> void:
 	_update_agents(delta)
 	_update_alive_counts()
 	_emit_telemetry(delta)
+	if _need_nav_probe and boot_time > 1.0:
+		_need_nav_probe = false
+		_dump_nav_coverage()
 
 
 func _emit_telemetry(delta: float) -> void:
@@ -320,7 +364,7 @@ func _update_agents(delta: float) -> void:
 		agent.frozen = frozen
 	var site_positions := {}
 	for site in map_loader.map_data.bomb_sites:
-		site_positions[str(site["name"])] = site["pos"]
+		site_positions[str(site["name"])] = site
 	var enemies_by_team := {"t": [], "ct": []}
 	for agent in bots:
 		if agent.alive:

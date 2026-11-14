@@ -81,6 +81,16 @@ def _entity_yaw(entity: Entity) -> float:
     return entity.number("angle", 0.0)
 
 
+# GoldSrc stores a player spawn origin at the *centre* of the 72-unit hull, so
+# the floor is half a hull below it; the payload uses feet-at-origin.
+SPAWN_HULL_HALF = 36.0 * SCALE
+
+
+def _spawn_origin(entity: Entity) -> list[float]:
+    raw = _vec3(entity, "origin")
+    return [raw[0] * SCALE, raw[2] * SCALE + SPAWN_HULL_HALF, -raw[1] * SCALE]
+
+
 def _spawn_yaw(entity: Entity) -> float:
     """GoldSrc yaw -> Godot Y rotation.
 
@@ -230,9 +240,10 @@ def extract_entities(bsp: Bsp) -> dict:
         origin = [raw_origin[0] * SCALE, raw_origin[2] * SCALE, -raw_origin[1] * SCALE]
         yaw = _spawn_yaw(entity)
         if cls in ("info_player_start", "info_player_deathmatch", "info_player_terrorist"):
-            spawns.append({"pos": origin, "yaw": yaw, "team": "t" if cls.endswith("terrorist") else "any"})
+            spawns.append({"pos": _spawn_origin(entity), "yaw": yaw,
+                           "team": "t" if cls.endswith("terrorist") else "any"})
         elif cls == "info_player_counterterrorist":
-            spawns.append({"pos": origin, "yaw": yaw, "team": "ct"})
+            spawns.append({"pos": _spawn_origin(entity), "yaw": yaw, "team": "ct"})
         elif cls in ("func_bomb_target", "info_bomb_target"):
             bounds = _brush_bounds(entity)
             if bounds:

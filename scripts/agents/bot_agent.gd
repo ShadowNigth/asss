@@ -36,6 +36,10 @@ var bomb_carrier := false
 var has_defuse_kit := false
 var match_state: MatchState
 var _action_timer := 0.0
+var _stuck_time := 0.0
+var _hold_cooldown := 0.0
+var _stuck_count := 0
+var _last_position := Vector3.ZERO
 
 
 func configure(skill_value: float, weapons: Array) -> void:
@@ -103,7 +107,12 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		goal_site = str(keys[randi() % keys.size()])
 		desired = goal_site
 	if not desired.is_empty() and site_positions.has(desired):
-		target_position = site_positions[desired]
+		var goal: Dictionary = site_positions[desired]
+		# The site centre is the middle of the bomb-target brush, which often
+		# sits on a raised platform the hull cannot climb. Walk to the nearest
+		# navmesh point instead, so the bot ends up somewhere it can stand.
+		target_position = _reachable(goal.get("pos", Vector3.ZERO))
+
 		state = State.ADVANCE
 	_walk_to(target_position, delta)
 
@@ -174,12 +183,24 @@ const PLANT_RADIUS := 7.0
 
 
 func _site_at(position: Vector3, site_positions: Dictionary) -> String:
-	## The bombsite name whose centre is close enough to plant at.
+	## The bombsite whose brush volume contains the bot.
+
+	## Sites are 6-19 m across, so a radius around the centre misses the
+	## corners of the big ones (Inferno B is 11x11 m); test the real bounds.
 	for name in site_positions.keys():
-		var centre: Vector3 = site_positions[name]
-		var flat := centre - position
-		flat.y = 0.0
-		if flat.length() <= PLANT_RADIUS:
+		var site: Dictionary = site_positions[name]
+		var lo: Vector3 = site.get("min", Vector3.ZERO)
+		var hi: Vector3 = site.get("max", Vector3.ZERO)
+		if hi == Vector3.ZERO and lo == Vector3.ZERO:
+			var flat: Vector3 = site.get("pos", Vector3.ZERO) - position
+			flat.y = 0.0
+			if flat.length() <= PLANT_RADIUS:
+				return str(name)
+			continue
+		# Horizontal containment only: the func_bomb_target brush often floats
+		# a couple of units above the floor the bot actually stands on.
+		if (position.x >= lo.x - 0.6 and position.x <= hi.x + 0.6
+				and position.z >= lo.z - 0.6 and position.z <= hi.z + 0.6):
 			return str(name)
 	return ""
 
@@ -193,6 +214,8 @@ func _walk_to(target: Vector3, delta: float) -> void:
 	flat.y = 0.0
 	if flat.length() < 1.5:
 		state = State.HOLD
+		return
+	if state == State.HOLD and _hold_cooldown > 0.0:
 		return
 	var path := _next_path_point(target)
 	var dir := (path - global_position)
@@ -212,7 +235,62 @@ func _walk_to(target: Vector3, delta: float) -> void:
 		velocity.y = -0.1
 	var look := atan2(-dir.x, -dir.z)
 	rotation.y = lerp_angle(rotation.y, look, clampf(delta * 6.0, 0.0, 1.0))
+	var before := global_position
 	move_and_slide()
+	# GoldSrc maps are full of 18-unit steps and CharacterBody3D cannot climb
+	# them on its own, so a bot walking at a step would wedge into it forever.
+	if is_on_floor() and global_position.distance_to(before) < 0.02:
+		_try_step_up(dir)
+	_detect_stuck(delta)
+
+
+
+func _try_step_up(dir: Vector3) -> void:
+	## Lift by one GoldSrc step, push forward, and keep the result only if the
+	## bot actually gained ground (otherwise restore and let stuck recovery act).
+	var start := global_position
+	global_position.y += Cfg.STEP_SIZE * Cfg.U2M + 0.02
+	velocity.y = 0.0
+	move_and_collide(dir * 0.45)
+	var progress := global_position - start
+	progress.y = 0.0
+	if progress.length() < 0.06:
+		global_position = start
+	else:
+		velocity.y = -0.1
+
+
+func _detect_stuck(delta: float) -> void:
+	## Walking into a doorway lintel or a ledge lip is common in GoldSrc
+	## geometry. If the bot has not moved for a while, jink sideways and pick a
+	## new approach line instead of grinding against the wall forever.
+	_stuck_time += delta
+	if _stuck_time < 0.4:
+		return
+	if global_position.distance_to(_last_position) > 0.35:
+		_last_position = global_position
+		_stuck_time = 0.0
+		_stuck_count = 0
+		return
+	_stuck_count += 1
+	_stuck_time = 0.0
+	_last_position = global_position
+	if _stuck_count < 3:
+		return
+	_stuck_count = 0
+	approach_offset = -approach_offset if absf(approach_offset) > 0.05 else randf_range(-0.3, 0.3)
+	# Hop: the lip is often just above the step height.
+	if is_on_floor():
+		velocity.y = Cfg.JUMP_IMPULSE * Cfg.U2M
+
+
+func _reachable(target: Vector3) -> Vector3:
+	## Nearest point on the navmesh, so a goal inside a brush or on a ledge does
+	## not send the bot into a wall it can never climb.
+	var map: RID = get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return target
+	return NavigationServer3D.map_get_closest_point(map, target)
 
 
 func _next_path_point(target: Vector3) -> Vector3:
@@ -222,6 +300,7 @@ func _next_path_point(target: Vector3) -> Vector3:
 	var from := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, global_position)
 	var to := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, target)
 	var path := NavigationServer3D.map_get_path(get_world_3d().navigation_map, from, to, true)
+
 	# A path of one point (or zero) means the query failed; walking straight at
 	# the target then pushes every bot into the same wall corner.
 	if path.size() < 2:

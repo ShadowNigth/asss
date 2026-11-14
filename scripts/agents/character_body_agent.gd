@@ -32,10 +32,12 @@ func setup(name_value: String, team_value: String, index: int) -> void:
 
 func _build() -> void:
 	var collider := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = Cfg.HULL_RADIUS * Cfg.U2M
-	capsule.height = Cfg.HULL_HEIGHT * Cfg.U2M
-	collider.shape = capsule
+	# A capsule's rounded bottom rolls off shallow ledges and steps instead of
+	# climbing them; a cylinder is flat-footed like the GoldSrc box hull.
+	var hull := CylinderShape3D.new()
+	hull.radius = Cfg.HULL_RADIUS * Cfg.U2M
+	hull.height = Cfg.HULL_HEIGHT * Cfg.U2M
+	collider.shape = hull
 	collider.position = Vector3(0.0, Cfg.HULL_HEIGHT * Cfg.U2M * 0.5, 0.0)
 	collider.name = "Collider"
 	add_child(collider)
