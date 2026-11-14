@@ -6,7 +6,7 @@ from scratch with the two commands at the bottom of this file.
 
 ```
 assets/
-  goldsrc/palette.lmp          Quake/GoldSrc 768-byte palette (for embedded miptex)
+  goldsrc/palette.lmp          last-resort Quake palette (see "Palettes" below)
   maps/<map>/<map>.csmap       geometry + gameplay payload (see below)
   maps/<map>/textures/*.png    one albedo per BSP miptex (or procedural fallback)
   maps/<map>/lightmaps/*.png   original baked light, packed into atlases
@@ -24,10 +24,38 @@ assets/
 | GoldSrc palette | `Perkedel/HexagonEngine` `addons/qodot/palette.lmp` | 768 B |
 
 `halflife.wad` is not distributed with the CS 1.5 branch (it is Valve content
-under LFS), so ~3–200 textures per map are missing from the retail WADs. Those
+under LFS), so ~3–200 textures per map are missing from the retail WADs. Point
+`--wads` at a `valve/` directory you already own and those resolve instead:
+
+```sh
+python3 tools/build_assets.py --cstrike <cstrike> --wads <valve> --all
+```
+
+Without it, the missing ones
 are replaced by a procedural texture chosen from the texture name family
 (`sand`, `metal`, `wood`, `brick`, `tile`, `concrete`, `glass`, `foliage`,
 `snow`, `water`), and the count is reported per map by the build script.
+
+## Palettes
+
+A GoldSrc miptex is stored as **four mip levels, then `uint16 paletteCount`,
+then `paletteCount * 3` palette bytes** — in both the BSP `TEXTURE` lump and in
+WAD3 lumps. The count word is the byte in front of every palette, so the real
+palette starts 2 bytes after the last mip level; treating that as alignment
+padding and guessing a single palette for the whole map picks up a neighbouring
+texture's ramp and decodes plausible-looking but wrong colours (Dust II's
+double doors came out green and the walls purple).
+
+The converter therefore reads one palette per miptex. Only textures with no
+palette of their own (a handful of maps) fall back to the best global candidate
+(`palette.best_global`), and `palette.lmp` is used only if a lump has neither —
+it is Quake's ramp, not Counter-Strike's, and applying it to CS art produces
+noise.
+
+BSP texture names carry a two-character render stamp (`+0`, `-a`, `+1~`), while
+the WAD stores the bare name, so `wad.Wad.resolve_name()` strips the stamp,
+drops the `~` fullbright marker and reconciles the `{` masked prefix before
+looking a lump up.
 
 ## `.csmap` format
 
