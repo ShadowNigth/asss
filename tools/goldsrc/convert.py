@@ -168,6 +168,24 @@ def merge_bomb_sites(sites: list[dict], tolerance: float = 2.0) -> list[dict]:
     return out
 
 
+def _tag_spawn_teams(spawns: list[dict], buy_zones: list[dict]) -> list[dict]:
+    """Assign each spawn to the team whose buy zone contains it.
+
+    A GoldSrc map only knows one pool of player starts; CS decides which team
+    may use one by the buy zone it sits in.  Without this tagging both teams
+    draw from the same list and half of them start on the enemy side (or, in
+    warmup, on top of each other).
+    """
+    for spawn in spawns:
+        pos = spawn["pos"]
+        for zone in buy_zones:
+            bounds = zone["bounds"]
+            if all(bounds["min"][i] <= pos[i] <= bounds["max"][i] for i in range(3)):
+                spawn["team"] = zone["team"]
+                break
+    return spawns
+
+
 def water_volumes(water_faces: list[tuple[list[float], list[int]]], tolerance: float = 0.35) -> list[dict]:
     """Cluster water faces into pools (AABB + surface level) for swimming."""
     boxes = []
@@ -258,7 +276,7 @@ def extract_entities(bsp: Bsp) -> dict:
         elif cls == "trigger_camera" and camera is None:
             camera = {"pos": origin, "yaw": yaw}
     return {
-        "spawns": spawns,
+        "spawns": _tag_spawn_teams(spawns, buy_zones),
         "bomb_sites": merge_bomb_sites(bomb_sites),
         "buy_zones": buy_zones,
         "rescue_zones": rescue_zones,

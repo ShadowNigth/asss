@@ -161,11 +161,12 @@ class Radar:
 		var origin := player.global_position
 		var forward := -player.global_transform.basis.z
 		var yaw := atan2(forward.x, forward.z)
-		for bot in bots:
-			if bot == null or not is_instance_valid(bot) or not bot.alive:
+		for entry in bots:
+			if entry == null or not is_instance_valid(entry) or not entry.alive:
 				continue
-			var offset := bot.global_position - origin
-			var local := offset.rotated(Vector3.UP, -yaw)
+			var bot: BotAgent = entry
+			var offset: Vector3 = bot.global_position - origin
+			var local: Vector3 = offset.rotated(Vector3.UP, -yaw)
 			if absf(local.x) > half or absf(local.z) > half:
 				continue
 			var point := centre + Vector2(local.x, local.z) / half * (size * 0.5)

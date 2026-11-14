@@ -24,6 +24,9 @@ var effects: Node3D
 var bot_names := ["Cliffe", "Minh", "Gooseman", "ZooL", "Barney", "Gina", "Vitaliy", "Vlad", "Simmons"]
 var boot_time := 0.0
 var ready_boot := false
+var telemetry_time := 0.0
+var _nav_mesh: NavigationMesh
+const NAV_SOURCE_GROUP := "nav_world_source"
 
 
 func _ready() -> void:
@@ -34,6 +37,13 @@ func _ready() -> void:
 	if match_state != null:
 		match_state.start()
 	ready_boot = true
+	if Cfg.telemetry_interval > 0.0:
+		for team in ["t", "ct"]:
+			var pool: Array = map_loader.spawn_pool(team)
+			var listing := PackedStringArray()
+			for spawn in pool:
+				listing.append(str(Vector3(spawn["pos"]).snapped(Vector3(0.01, 0.01, 0.01))))
+			print("[telemetry] spawns %s (%d): %s" % [team, pool.size(), " ".join(listing)])
 	if Cfg.headless_display:
 		print("[game] %s loaded: %d groups, %d tris, %d collision tris (dropped %d), %d spawns, %d sites" % [
 			Cfg.map_name, map_loader.stats.get("groups", 0), map_loader.stats.get("triangles", 0),
@@ -91,7 +101,7 @@ func _build_agents() -> void:
 	add_child(navigation_region)
 	_bake_navigation()
 
-	var spawn := map_loader.random_spawn(Cfg.start_team)
+	var spawn := map_loader.spawn_for_index(Cfg.start_team, 0)
 	player = PlayerController.new()
 	player.name = "Player"
 	add_child(player)
@@ -112,7 +122,7 @@ func _build_agents() -> void:
 func _spawn_bot(team: String, index: int) -> void:
 	var agent := BotAgent.new()
 	agent.name = "Bot_%s_%d" % [team, index]
-	var spawn := map_loader.random_spawn(team)
+	var spawn := map_loader.spawn_for_index(team, index + 1)
 	add_child(agent)
 	agent.setup(bot_names[index % bot_names.size()], team, index)
 	agent.reset_actor(spawn, team)
@@ -128,12 +138,22 @@ func _bot_loadout(team: String) -> Array:
 	return ["m4a1", "usp"]
 
 
+func _add_to_nav_group(node: Node) -> void:
+	if node == null:
+		return
+	node.add_to_group(NAV_SOURCE_GROUP, true)
+
+
 func _bake_navigation() -> void:
 	if map_loader.collision_body == null:
 		return
 	var nav_mesh := NavigationMesh.new()
 	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav_mesh.geometry_collision_mask = 1
+	# The world collision lives next to the region, not under it: the default
+	# ROOT_NODE_CHILDREN source would parse the (empty) region and bake nothing.
+	nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN
+	nav_mesh.geometry_source_group_name = NAV_SOURCE_GROUP
 	nav_mesh.cell_size = 0.25
 	nav_mesh.cell_height = 0.25
 	nav_mesh.agent_radius = Cfg.HULL_RADIUS * Cfg.U2M
@@ -142,7 +162,14 @@ func _bake_navigation() -> void:
 	nav_mesh.agent_max_slope = 46.0
 	nav_mesh.region_min_size = 4.0
 	navigation_region.navigation_mesh = nav_mesh
+	if map_loader.collision_body != null:
+		_add_to_nav_group(map_loader.collision_body)
 	navigation_region.bake_navigation_mesh(false)
+	_nav_mesh = nav_mesh
+	if Cfg.telemetry_interval > 0.0:
+		var polygons := nav_mesh.get_polygon_count()
+		var verts := nav_mesh.get_vertices().size()
+		print("[telemetry] navmesh polygons=%d vertices=%d cell=%.2f" % [polygons, verts, nav_mesh.cell_size])
 
 
 func _build_ui() -> void:
@@ -170,11 +197,56 @@ func _process(delta: float) -> void:
 		return
 	_update_agents(delta)
 	_update_alive_counts()
+	_emit_telemetry(delta)
+
+
+func _emit_telemetry(delta: float) -> void:
+	## Headless smoke-test hook: one line per interval with the state a round
+	## can be stuck in (phase, alive counts, bomb, bot movement).
+	if Cfg.telemetry_interval <= 0.0:
+		return
+	telemetry_time += delta
+	if telemetry_time < Cfg.telemetry_interval:
+		return
+	telemetry_time = 0.0
+	var moving := 0
+	var grounded := 0
+	var distances := PackedFloat32Array()
+	for index in bots.size():
+		var agent: CharacterBody3D = bots[index]
+		if agent.velocity.length() > 0.5:
+			moving += 1
+		if agent.is_on_floor():
+			grounded += 1
+		distances.append(agent.global_position.y)
+	var names := PackedStringArray()
+	var dead := PackedStringArray()
+	for index in bots.size():
+		var bot: CharacterBody3D = bots[index]
+		if not bot.alive:
+			dead.append(str(bot.name))
+		else:
+			names.append("%s@%s" % [bot.name, str(bot.global_position.snapped(Vector3(0.1, 0.1, 0.1)))])
+	var ys := ""
+	if not distances.is_empty():
+		var lowest := INF
+		var highest := -INF
+		for value in distances:
+			lowest = minf(lowest, value)
+			highest = maxf(highest, value)
+		ys = " y=[%.2f..%.2f]" % [lowest, highest]
+	print("[telemetry] t=%.0f %s alive t=%d ct=%d bomb=%s moving=%d/%d grounded=%d%s dead=%s %s" % [
+		boot_time, match_state.status_line(), match_state.alive["t"], match_state.alive["ct"],
+		match_state.bomb_state, moving, bots.size(), grounded, ys, ",".join(dead), " ".join(names)])
 
 
 func _update_agents(delta: float) -> void:
 	if bots.is_empty():
 		return
+	# Freeze time: no movement and no shooting, exactly like the real game.
+	var frozen: bool = match_state.phase != MatchState.Phase.LIVE
+	for agent in bots:
+		agent.frozen = frozen
 	var site_positions := {}
 	for site in map_loader.map_data.bomb_sites:
 		site_positions[str(site["name"])] = site["pos"]

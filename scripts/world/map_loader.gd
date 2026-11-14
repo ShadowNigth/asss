@@ -269,5 +269,21 @@ func inside_water(position: Vector3) -> bool:
 func random_spawn(team: String) -> Dictionary:
 	var pool := map_data.spawn_points(team)
 	if pool.is_empty():
-		return {"pos": map_data.centre() + Vector3.UP * 2.0, "yaw": 0.0, "team": team}
+		return {"pos": map_data.centre() + Vector3.UP * 2.0, "yaw": 0.0, "team": team, "index": 0}
 	return pool[randi() % pool.size()]
+
+
+func spawn_pool(team: String) -> Array:
+	## Every spawn a team may use, in map order (so callers can hand them out
+	## one per actor instead of letting everyone draw the same one).
+	var pool := map_data.spawn_points(team)
+	if pool.is_empty():
+		pool = [{"pos": map_data.centre() + Vector3.UP * 2.0, "yaw": 0.0, "team": team}]
+	return pool
+
+
+func spawn_for_index(team: String, index: int) -> Dictionary:
+	## Deterministic, collision-free assignment: actors of one team spread over
+	## the spawn entities instead of being stacked on top of each other.
+	var pool := spawn_pool(team)
+	return pool[posmod(index, pool.size())]

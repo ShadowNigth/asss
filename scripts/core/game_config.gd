@@ -77,6 +77,8 @@ var quality := "high"
 var no_mouse := false
 var headless_display := false
 var start_team := "t"
+## Seconds between gameplay telemetry lines in headless mode (0 = off).
+var telemetry_interval := 0.0
 
 
 func _ready() -> void:
@@ -107,6 +109,8 @@ func _parse_args() -> void:
 				no_mouse = true
 			"team":
 				start_team = value if not value.is_empty() else "t"
+			"telemetry":
+				telemetry_interval = float(value) if not value.is_empty() else 5.0
 			"list-maps":
 				print("available maps: ", ", ".join(available_maps()))
 				get_tree().quit()

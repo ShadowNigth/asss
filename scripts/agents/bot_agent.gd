@@ -27,16 +27,30 @@ var skill := 0.55
 var move_speed := 4.2
 var strafe_dir := 1.0
 var strafe_timer := 0.0
+## Set during freeze time: hold position and do not shoot.
+var frozen := false
+## Lateral bias (-1..1) applied to the walk vector so bots do not stack.
+var approach_offset := 0.0
 
 
 func configure(skill_value: float, weapons: Array) -> void:
 	skill = clampf(skill_value, 0.05, 0.98)
+	approach_offset = randf_range(-0.22, 0.22)
 	loadout = weapons.duplicate()
 	move_speed = 3.6 + skill * 1.6
 
 
 func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 	if not alive:
+		return
+	if frozen:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		if not is_on_floor():
+			velocity.y -= Cfg.GRAVITY * Cfg.U2M * delta
+		else:
+			velocity.y = -0.1
+		move_and_slide()
 		return
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	reaction = maxf(0.0, reaction - delta)
@@ -76,6 +90,9 @@ func _walk_to(target: Vector3, delta: float) -> void:
 	if dir.length() < 0.05:
 		return
 	dir = dir.normalized()
+	# Spread the team out on the way in: a per-bot lateral offset keeps squad
+	# mates from walking the exact same line into the same wall.
+	dir = (dir + dir.cross(Vector3.UP) * approach_offset).normalized()
 	var desired_velocity := dir * move_speed
 	velocity.x = move_toward(velocity.x, desired_velocity.x, delta * 22.0)
 	velocity.z = move_toward(velocity.z, desired_velocity.z, delta * 22.0)
@@ -95,9 +112,18 @@ func _next_path_point(target: Vector3) -> Vector3:
 	var from := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, global_position)
 	var to := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, target)
 	var path := NavigationServer3D.map_get_path(get_world_3d().navigation_map, from, to, true)
-	if path.size() > 1:
-		return path[1]
-	return target
+	# A path of one point (or zero) means the query failed; walking straight at
+	# the target then pushes every bot into the same wall corner.
+	if path.size() < 2:
+		return global_position
+	# Skip waypoints we have already reached, otherwise a bot hovering on a
+	# navigation polygon edge keeps aiming at the point behind it.
+	var point := path[1]
+	for index in range(1, path.size()):
+		if global_position.distance_to(path[index]) > 0.6:
+			point = path[index]
+			break
+	return point
 
 
 func _closest_visible(enemies: Array) -> Node3D:

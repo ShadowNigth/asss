@@ -3,7 +3,7 @@
     "de_aztec": {
       "bomb_sites": 2,
       "buy_zones": 3,
-      "bytes": 939331,
+      "bytes": 939283,
       "fallback_textures": 9,
       "groups": 26,
       "lights": 19,
@@ -20,7 +20,7 @@
     "de_cbble": {
       "bomb_sites": 2,
       "buy_zones": 2,
-      "bytes": 1225992,
+      "bytes": 1225944,
       "fallback_textures": 7,
       "groups": 27,
       "lights": 11,
@@ -54,7 +54,7 @@
     "de_dust": {
       "bomb_sites": 2,
       "buy_zones": 2,
-      "bytes": 1227755,
+      "bytes": 1227707,
       "fallback_textures": 3,
       "groups": 20,
       "lights": 7,
@@ -71,7 +71,7 @@
     "de_dust2": {
       "bomb_sites": 2,
       "buy_zones": 2,
-      "bytes": 1179665,
+      "bytes": 1179605,
       "fallback_textures": 3,
       "groups": 32,
       "lights": 11,
@@ -88,7 +88,7 @@
     "de_inferno": {
       "bomb_sites": 2,
       "buy_zones": 3,
-      "bytes": 1514055,
+      "bytes": 1514007,
       "fallback_textures": 12,
       "groups": 55,
       "lights": 0,
@@ -139,7 +139,7 @@
     "de_prodigy": {
       "bomb_sites": 2,
       "buy_zones": 8,
-      "bytes": 1754542,
+      "bytes": 1754512,
       "fallback_textures": 203,
       "groups": 144,
       "lights": 0,
@@ -156,7 +156,7 @@
     "de_storm": {
       "bomb_sites": 2,
       "buy_zones": 2,
-      "bytes": 1590196,
+      "bytes": 1590148,
       "fallback_textures": 0,
       "groups": 41,
       "lights": 29,
@@ -190,7 +190,7 @@
     "de_torn": {
       "bomb_sites": 2,
       "buy_zones": 2,
-      "bytes": 2807107,
+      "bytes": 2807061,
       "fallback_textures": 0,
       "groups": 125,
       "lights": 21,
@@ -207,7 +207,7 @@
     "de_train": {
       "bomb_sites": 2,
       "buy_zones": 3,
-      "bytes": 923311,
+      "bytes": 923275,
       "fallback_textures": 47,
       "groups": 95,
       "lights": 2,
@@ -224,7 +224,7 @@
     "de_vegas": {
       "bomb_sites": 2,
       "buy_zones": 4,
-      "bytes": 1353276,
+      "bytes": 1353246,
       "fallback_textures": 132,
       "groups": 148,
       "lights": 2,
@@ -241,7 +241,7 @@
     "de_vertigo": {
       "bomb_sites": 2,
       "buy_zones": 3,
-      "bytes": 1132606,
+      "bytes": 1132558,
       "fallback_textures": 24,
       "groups": 32,
       "lights": 2,
