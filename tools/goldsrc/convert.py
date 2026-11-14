@@ -247,7 +247,18 @@ def extract_entities(bsp: Bsp) -> dict:
 
 # ---------------------------------------------------------------- sky params
 def load_skybox(env_dir: Path | None, skyname: str) -> dict[str, np.ndarray] | None:
-    """Load the six retail skybox faces named ``<skyname><suffix>`` from gfx/env."""
+    """Load the six retail skybox faces named ``<skyname><suffix>`` from gfx/env.
+
+    ``env_dir`` may be a single directory or a list of them searched in order,
+    so a Half-Life ``valve/gfx/env`` can supply skies that the CS 1.5 download
+    does not ship (``dusk`` on cbble/prodigy lives in Half-Life's pak).
+    """
+    if isinstance(env_dir, (list, tuple)):
+        for candidate in env_dir:
+            faces = load_skybox(candidate, skyname)
+            if faces:
+                return faces
+        return None
     if env_dir is None or not Path(env_dir).is_dir() or not skyname:
         return None
     wanted = skyname.lower().lstrip("2")
@@ -581,7 +592,7 @@ def _is_opaque(image) -> bool:
 
 # ---------------------------------------------------------------- writer
 def write_map(bsp_path: Path, wad_paths: list[Path], palette: bytes, out_root: Path,
-              log=print, env_dir: Path | None = None) -> dict:
+              log=print, env_dir=None) -> dict:
     slug = bsp_path.stem.lower()
     bsp = Bsp(bsp_path)
     bsp.resolve_model_bounds()

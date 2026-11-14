@@ -109,6 +109,8 @@ def main() -> int:
     parser.add_argument("--cstrike", type=Path, help="existing cstrike/ directory to read maps and WADs from")
     parser.add_argument("--wads", type=Path, nargs="*", default=[],
                         help="extra WAD directories (e.g. valve/ with halflife.wad)")
+    parser.add_argument("--env", type=Path, nargs="*", default=[],
+                        help="extra gfx/env skybox directories (e.g. valve/gfx/env for dusk)")
     parser.add_argument("--out", type=Path, default=ROOT, help="project root that receives assets/maps")
     parser.add_argument("--maps", default="", help="comma separated map list (default: every de_* bombsite map)")
     parser.add_argument("--all", action="store_true", help="convert every de_* map found")
@@ -149,7 +151,7 @@ def main() -> int:
     wads = wad_files(cstrike)
     for extra in args.wads or []:
         wads.extend(p for p in wad_files(Path(extra)) if p not in wads)
-    env_dir = cstrike / "gfx" / "env"
+    env_dirs = [cstrike / "gfx" / "env", *(Path(extra) for extra in args.env or [])]
     results = []
     print(f"converting {len(wanted)} maps from {cstrike} ({len(wads)} wads)")
     for name in wanted:
@@ -158,7 +160,7 @@ def main() -> int:
             print(f"  skipping {name}: no bsp", file=sys.stderr)
             continue
         try:
-            results.append(write_map(bsp, wads, palette, args.out, env_dir=env_dir))
+            results.append(write_map(bsp, wads, palette, args.out, env_dir=env_dirs))
         except Exception as error:  # noqa: BLE001 - keep going, report at the end
             print(f"  {name} failed: {error}", file=sys.stderr)
 
