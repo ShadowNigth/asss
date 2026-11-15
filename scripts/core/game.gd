@@ -104,7 +104,7 @@ func _build_agents() -> void:
 	add_child(navigation_region)
 	_bake_navigation()
 
-	var spawn := map_loader.spawn_for_index(Cfg.start_team, 0)
+	var spawn := _grounded_spawn(map_loader.spawn_for_index(Cfg.start_team, 0))
 	player = PlayerController.new()
 	player.name = "Player"
 	add_child(player)
@@ -129,7 +129,7 @@ func _on_round_started(_number: int, _freeze: float) -> void:
 	_respawn_team("t")
 	_respawn_team("ct")
 	if player != null and is_instance_valid(player):
-		player.teleport_to(map_loader.spawn_for_index("t", 0))
+		player.teleport_to(_grounded_spawn(map_loader.spawn_for_index("t", 0)))
 	_assign_bomb()
 
 
@@ -138,7 +138,7 @@ func _respawn_team(team: String) -> void:
 	for agent in bots:
 		if agent.team != team:
 			continue
-		agent.reset_actor(map_loader.spawn_for_index(team, slot + 1), team)
+		agent.reset_actor(_grounded_spawn(map_loader.spawn_for_index(team, slot + 1)), team)
 		slot += 1
 
 
@@ -166,7 +166,7 @@ func _assign_bomb() -> void:
 func _spawn_bot(team: String, index: int) -> void:
 	var agent := BotAgent.new()
 	agent.name = "Bot_%s_%d" % [team, index]
-	var spawn := map_loader.spawn_for_index(team, index + 1)
+	var spawn := _grounded_spawn(map_loader.spawn_for_index(team, index + 1))
 	add_child(agent)
 	agent.setup(bot_names[index % bot_names.size()], team, index)
 	agent.reset_actor(spawn, team)
@@ -175,6 +175,25 @@ func _spawn_bot(team: String, index: int) -> void:
 	agent.add_to_group("damageable")
 	bots.append(agent)
 	agents.append(agent)
+
+
+func _grounded_spawn(spawn: Dictionary) -> Dictionary:
+	## Player starts can sit on brushwork with no collision under it (survivor's
+	## T spawn floats 0.8 m over a grate), so an actor placed exactly there
+	## falls straight through the level. Trace down from the recorded point and
+	## use the first real surface instead.
+	var point: Vector3 = spawn.get("pos", Vector3.ZERO)
+	var nav_map := get_world_3d().navigation_map
+	if _nav_mesh != null and NavigationServer3D.map_get_iteration_id(nav_map) != 0:
+		# The navmesh is baked from collision geometry, so it is the reliable
+		# answer for "where is the floor here". Keep the recorded XZ and take
+		# the mesh height, which tolerates a spawn a little above or below it.
+		var landed := NavigationServer3D.map_get_closest_point(nav_map, point)
+		if landed.distance_to(point) < 4.0:
+			point = Vector3(point.x, landed.y + 0.05, point.z)
+	var grounded := spawn.duplicate()
+	grounded["pos"] = point
+	return grounded
 
 
 func _bot_loadout(team: String) -> Array:

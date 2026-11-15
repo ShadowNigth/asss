@@ -43,6 +43,8 @@ var _hold_cooldown := 0.0
 var _heading := Vector3.ZERO
 var _carrier_stall := 0
 var _carrier_stuck_for := 0.0
+var _best_goal_distance := INF
+var _goal_site_choice := ""
 var _stuck_count := 0
 var _last_position := Vector3.ZERO
 
@@ -68,6 +70,14 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		return
 	fire_cooldown = maxf(0.0, fire_cooldown - delta)
 	reaction = maxf(0.0, reaction - delta)
+	# A held bot still has to count down: the early return below would
+	# otherwise leave it standing on its first hold for the rest of the round.
+	if state == State.HOLD:
+		_hold_cooldown -= delta
+		if _hold_cooldown <= 0.0:
+			state = State.ADVANCE
+			goal_site = ""
+			_goal_site_choice = ""
 	# Objective first: a T standing in a site with the C4 plants it, and a CT
 	# standing on a planted C4 defuses. Both actions are interruptible.
 	if _run_objective(delta, site_positions):
@@ -81,11 +91,11 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		_strafe(delta, enemy)
 		return
 
-	# no target: keep walking the current goal
-	if state == State.HOLD and target_position.distance_to(global_position) < 2.0:
-		return
 	# A planted C4 overrides every other goal: CTs converge on it, Ts guard it.
 	if match_state != null and match_state.bomb_state == "planted":
+		if state == State.HOLD:
+			state = State.ADVANCE
+			goal_site = ""
 		if team == "ct":
 			if global_position.distance_to(match_state.bomb_position) < 1.6:
 				state = State.DEFUSE
@@ -113,18 +123,26 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		desired = goal_site
 	if not desired.is_empty() and site_positions.has(desired):
 		var goal: Dictionary = site_positions[desired]
-		# Walk to a spot *inside* the site rather than the shared centre, so a
-		# squad does not stand in one pile. An interior point can still be out
-		# of the hull's reach (chateau's A sits on a shelf the stairs barely
-		# reach), so fall back to the nearest walkable point to the centre.
-		target_position = _reachable(_scatter(goal))
-		var centre: Vector3 = goal.get("pos", Vector3.ZERO)
-		var drift := target_position - centre
-		drift.y = 0.0
-		if drift.length() > Cfg.SITE_REACH * Cfg.U2M:
-			target_position = _reachable(centre)
+		# Pick the goal once per approach, not every frame: a target that is
+		# re-randomised each tick can never be reached, so the bot both jitters
+		# in place and reports no progress forever.
+		if _goal_site_choice != desired:
+			_goal_site_choice = desired
+			# Walk to a spot *inside* the site rather than the shared centre, so
+			# a squad does not stand in one pile. An interior point can still be
+			# out of the hull's reach (chateau's A sits on a shelf the stairs
+			# barely reach), so fall back to the nearest walkable point to the
+			# centre.
+			target_position = _reachable(_scatter(goal))
+			var centre: Vector3 = goal.get("pos", Vector3.ZERO)
+			var drift := target_position - centre
+			drift.y = 0.0
+			if drift.length() > Cfg.SITE_REACH * Cfg.U2M:
+				target_position = _reachable(centre)
+			_best_goal_distance = INF
 
 		state = State.ADVANCE
+		_best_goal_distance = INF
 	_walk_to(target_position, delta, site_positions)
 
 
@@ -224,17 +242,13 @@ func _walk_to(target: Vector3, delta: float, sites: Dictionary) -> void:
 	var flat := target - global_position
 	flat.y = 0.0
 	if flat.length() < 1.5:
-		# Reached the goal: hold it for a while, then pick a fresh spot inside
-		# the site instead of freezing in place for the rest of the round.
+		# Reached the goal: hold it for a while and then pick a fresh spot
+		# inside the site instead of freezing here. Only arm the timer on the
+		# transition, otherwise re-entering every frame would restart it.
 		if state != State.HOLD:
 			state = State.HOLD
 			_hold_cooldown = HOLD_TIME
-			return
-		_hold_cooldown -= delta
-		if _hold_cooldown > 0.0:
-			return
-		state = State.ADVANCE
-		goal_site = ""
+		return
 	var path := _next_path_point(target)
 	var dir := (path - global_position)
 	dir.y = 0.0
@@ -288,43 +302,55 @@ func _try_step_up(dir: Vector3) -> void:
 
 func _detect_stuck(delta: float, sites: Dictionary) -> void:
 	## Walking into a doorway lintel or a ledge lip is common in GoldSrc
-	## geometry. If the bot has not moved for a while, jink sideways and pick a
-	## new approach line instead of grinding against the wall forever.
+	## geometry. Judge progress by distance to the goal rather than by motion:
+	## a bot jinking against a wall moves every frame while getting nowhere,
+	## and that is exactly what strands a carrier (and therefore a round).
 	_stuck_time += delta
-	if bomb_carrier:
-		_carrier_stuck_for += delta
-		if _carrier_stuck_for > Cfg.CARRIER_RESCUE_AFTER:
-			_carrier_stuck_for = 0.0
-			_rescue_carrier(sites)
 	if _stuck_time < 0.4:
 		return
-	if global_position.distance_to(_last_position) > 0.35:
-		_last_position = global_position
+	var goal_distance := 0.0
+	if target_position != Vector3.ZERO:
+		var to_goal := target_position - global_position
+		to_goal.y = 0.0
+		goal_distance = to_goal.length()
+	if goal_distance < _best_goal_distance - 0.4:
+		# Real progress: try again from here.
+		_best_goal_distance = goal_distance
 		_stuck_time = 0.0
 		_stuck_count = 0
 		_carrier_stall = 0
 		_carrier_stuck_for = 0.0
 		return
+	if goal_distance > _best_goal_distance + 2.0:
+		# Lost ground (knocked back, or a fresh goal): start over.
+		_best_goal_distance = goal_distance
+		_stuck_time = 0.0
+		_stuck_count = 0
+		return
 	_stuck_count += 1
 	_stuck_time = 0.0
-	_last_position = global_position
 	if _stuck_count < 3:
 		return
 	_stuck_count = 0
-	# A carrier that cannot reach the site strands the whole round (the bomb
-	# never plants and the CTs just wait). Give it a fresh approach line and
-	# reset the site choice rather than letting it grind out four minutes.
+	# A carrier that cannot reach the site strands the whole round (nobody
+	# plants and the CTs just wait). Give it a fresh approach line, and if
+	# that keeps failing, move it to the site outright.
 	if bomb_carrier:
 		_carrier_stall += 1
+		_carrier_stuck_for += 1.2
+		if _carrier_stuck_for > Cfg.CARRIER_RESCUE_AFTER:
+			_carrier_stuck_for = 0.0
+			_rescue_carrier(sites)
+			return
 		if _carrier_stall >= 6:
 			_carrier_stall = 0
 			goal_site = ""
+			_goal_site_choice = ""
 	approach_offset = -approach_offset if absf(approach_offset) > 0.05 else randf_range(-0.3, 0.3)
 	# Hop: the lip is often just above the step height.
 	if is_on_floor():
 		velocity.y = Cfg.JUMP_IMPULSE * Cfg.U2M
 	_climb_ledge()
-
 
 
 func _rescue_carrier(sites: Dictionary) -> void:
@@ -341,6 +367,8 @@ func _rescue_carrier(sites: Dictionary) -> void:
 	global_position = landing + Vector3.UP * 0.1
 	velocity = Vector3.ZERO
 	goal_site = ""
+	_goal_site_choice = ""
+	_best_goal_distance = INF
 
 
 func _climb_ledge() -> void:
