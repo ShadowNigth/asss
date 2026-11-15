@@ -37,7 +37,7 @@
     "de_chateau": {
       "bomb_sites": 2,
       "buy_zones": 0,
-      "bytes": 2874925,
+      "bytes": 2874872,
       "fallback_textures": 0,
       "groups": 97,
       "lights": 81,
@@ -105,7 +105,7 @@
     "de_nuke": {
       "bomb_sites": 2,
       "buy_zones": 0,
-      "bytes": 1527971,
+      "bytes": 1527941,
       "fallback_textures": 145,
       "groups": 104,
       "lights": 30,
@@ -122,7 +122,7 @@
     "de_piranesi": {
       "bomb_sites": 2,
       "buy_zones": 0,
-      "bytes": 2146017,
+      "bytes": 2145969,
       "fallback_textures": 35,
       "groups": 102,
       "lights": 0,
@@ -173,7 +173,7 @@
     "de_survivor": {
       "bomb_sites": 2,
       "buy_zones": 0,
-      "bytes": 1365263,
+      "bytes": 1365233,
       "fallback_textures": 87,
       "groups": 69,
       "lights": 5,

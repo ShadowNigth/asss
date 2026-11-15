@@ -178,21 +178,54 @@ def merge_bomb_sites(sites: list[dict], tolerance: float = 2.0) -> list[dict]:
     return out
 
 
-def _tag_spawn_teams(spawns: list[dict], buy_zones: list[dict]) -> list[dict]:
-    """Assign each spawn to the team whose buy zone contains it.
+def _tag_spawn_teams(spawns: list[dict], buy_zones: list[dict],
+                     sites: list[dict] | None = None) -> list[dict]:
+    """Assign each spawn to a team.
 
     A GoldSrc map only knows one pool of player starts; CS decides which team
     may use one by the buy zone it sits in.  Without this tagging both teams
     draw from the same list and half of them start on the enemy side (or, in
     warmup, on top of each other).
+
+    Five retail maps ship no ``func_buyzone`` at all (chateau, nuke, piranesi,
+    survivor, and parts of train).  For those the starts are split by geometry:
+    each spawn belongs to the half of the map that is closer to the terrorist
+    or the counter-terrorist approach, which is the far/near side of the two
+    bomb sites.  Player starts are written in team order, but relying on that
+    is fragile, so distance decides.
     """
+    tagged = False
     for spawn in spawns:
         pos = spawn["pos"]
         for zone in buy_zones:
             bounds = zone["bounds"]
             if all(bounds["min"][i] <= pos[i] <= bounds["max"][i] for i in range(3)):
                 spawn["team"] = zone["team"]
+                tagged = True
                 break
+    if tagged or not sites:
+        return spawns
+
+    # No buy zones: project every spawn and both sites onto the axis that
+    # separates the sites, then split at the midpoint.
+    centres = [s["pos"] for s in sites]
+    if len(centres) < 2:
+        return spawns
+    ax = centres[1][0] - centres[0][0]
+    az = centres[1][2] - centres[0][2]
+    length = math.hypot(ax, az)
+    if length < 1e-3:
+        return spawns
+    ax, az = ax / length, az / length
+    coarse = [(p[0] * ax + p[2] * az) for p in centres]
+    mid = (max(coarse) + min(coarse)) * 0.5
+    values = sorted((spawn["pos"][0] * ax + spawn["pos"][2] * az, index)
+                    for index, spawn in enumerate(spawns))
+    # The team that owns the far end of the map spawns at the far end; which
+    # end is which does not matter for gameplay, only that the teams are split.
+    half = len(values) // 2
+    for rank, (_value, index) in enumerate(values):
+        spawns[index]["team"] = "ct" if rank < half else "t"
     return spawns
 
 
@@ -287,7 +320,7 @@ def extract_entities(bsp: Bsp) -> dict:
         elif cls == "trigger_camera" and camera is None:
             camera = {"pos": origin, "yaw": yaw}
     return {
-        "spawns": _tag_spawn_teams(spawns, buy_zones),
+        "spawns": _tag_spawn_teams(spawns, buy_zones, merge_bomb_sites(bomb_sites)),
         "bomb_sites": merge_bomb_sites(bomb_sites),
         "buy_zones": buy_zones,
         "rescue_zones": rescue_zones,

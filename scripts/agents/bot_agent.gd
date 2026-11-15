@@ -13,6 +13,8 @@ const SIGHT_RANGE := 60.0
 const FIRE_RANGE := 45.0
 const ENGAGE_TURN_SPEED := 4.5
 const AIM_ERROR := 1.4
+## Seconds a bot holds a reached spot before repositioning inside the site.
+const HOLD_TIME := 8.0
 
 var loadout: Array = []
 var plant_context := false
@@ -108,10 +110,16 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		desired = goal_site
 	if not desired.is_empty() and site_positions.has(desired):
 		var goal: Dictionary = site_positions[desired]
-		# The site centre is the middle of the bomb-target brush, which often
-		# sits on a raised platform the hull cannot climb. Walk to the nearest
-		# navmesh point instead, so the bot ends up somewhere it can stand.
-		target_position = _reachable(goal.get("pos", Vector3.ZERO))
+		# Walk to a spot *inside* the site rather than the shared centre, so a
+		# squad does not stand in one pile. An interior point can still be out
+		# of the hull's reach (chateau's A sits on a shelf the stairs barely
+		# reach), so fall back to the nearest walkable point to the centre.
+		target_position = _reachable(_scatter(goal))
+		var centre: Vector3 = goal.get("pos", Vector3.ZERO)
+		var flat := target_position - centre
+		flat.y = 0.0
+		if flat.length() > Cfg.SITE_REACH * Cfg.U2M:
+			target_position = _reachable(centre)
 
 		state = State.ADVANCE
 	_walk_to(target_position, delta)
@@ -213,10 +221,17 @@ func _walk_to(target: Vector3, delta: float) -> void:
 	var flat := target - global_position
 	flat.y = 0.0
 	if flat.length() < 1.5:
-		state = State.HOLD
-		return
-	if state == State.HOLD and _hold_cooldown > 0.0:
-		return
+		# Reached the goal: hold it for a while, then pick a fresh spot inside
+		# the site instead of freezing in place for the rest of the round.
+		if state != State.HOLD:
+			state = State.HOLD
+			_hold_cooldown = HOLD_TIME
+			return
+		_hold_cooldown -= delta
+		if _hold_cooldown > 0.0:
+			return
+		state = State.ADVANCE
+		goal_site = ""
 	var path := _next_path_point(target)
 	var dir := (path - global_position)
 	dir.y = 0.0
@@ -235,29 +250,36 @@ func _walk_to(target: Vector3, delta: float) -> void:
 		velocity.y = -0.1
 	var look := atan2(-dir.x, -dir.z)
 	rotation.y = lerp_angle(rotation.y, look, clampf(delta * 6.0, 0.0, 1.0))
-	var before := global_position
 	move_and_slide()
 	# GoldSrc maps are full of 18-unit steps and CharacterBody3D cannot climb
 	# them on its own, so a bot walking at a step would wedge into it forever.
-	if is_on_floor() and global_position.distance_to(before) < 0.02:
+	if is_on_wall():
 		_try_step_up(dir)
 	_detect_stuck(delta)
 
 
 
 func _try_step_up(dir: Vector3) -> void:
-	## Lift by one GoldSrc step, push forward, and keep the result only if the
-	## bot actually gained ground (otherwise restore and let stuck recovery act).
+	## Climb a step the hull bumped into: lift, push forward, drop back down.
+	## The move is kept only when the bot ends up on the floor and further
+	## along than it started, so walls taller than a step are left alone.
+	if not is_on_floor():
+		return
 	var start := global_position
-	global_position.y += Cfg.STEP_SIZE * Cfg.U2M + 0.02
-	velocity.y = 0.0
-	move_and_collide(dir * 0.45)
-	var progress := global_position - start
-	progress.y = 0.0
-	if progress.length() < 0.06:
+	var step := Cfg.STEP_SIZE * Cfg.U2M
+	for rise in [step, step * 1.5]:
+		global_position.y += rise
+		velocity.y = 0.0
+		var moved := move_and_collide(dir * 0.4)
+		move_and_collide(Vector3(0.0, -(rise + 0.25), 0.0))
+		var progress := Vector2(global_position.x - start.x, global_position.z - start.z).length()
+		if is_on_floor() and progress > 0.08 and global_position.y > start.y - 0.05:
+			velocity.y = -0.1
+			return
 		global_position = start
-	else:
-		velocity.y = -0.1
+	# Nothing climbable: undo and let the stuck recovery pick another line.
+	global_position = start
+	velocity.y = -0.1
 
 
 func _detect_stuck(delta: float) -> void:
@@ -282,6 +304,22 @@ func _detect_stuck(delta: float) -> void:
 	# Hop: the lip is often just above the step height.
 	if is_on_floor():
 		velocity.y = Cfg.JUMP_IMPULSE * Cfg.U2M
+
+
+
+func _scatter(goal: Dictionary) -> Vector3:
+	## A per-bot point inside the site box (or near the centre when the payload
+	## has no bounds), so several bots can hold a site side by side.
+	var centre: Vector3 = goal.get("pos", Vector3.ZERO)
+	var lo: Vector3 = goal.get("min", Vector3.ZERO)
+	var hi: Vector3 = goal.get("max", Vector3.ZERO)
+	if hi == Vector3.ZERO and lo == Vector3.ZERO:
+		return centre
+	var spot := centre
+	spot.x = lerpf(lo.x + 1.0, hi.x - 1.0, 0.5 + approach_offset)
+	spot.z = lerpf(lo.z + 1.0, hi.z - 1.0, 0.5 + randf_range(-0.35, 0.35))
+	spot.y = centre.y
+	return spot
 
 
 func _reachable(target: Vector3) -> Vector3:

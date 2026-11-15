@@ -23,6 +23,9 @@ const FRICTION := 5.2
 const STOPSPEED := 80.0
 const JUMP_IMPULSE := 301.99338  # = sqrt(2 * 800 * 57) -> 57 u jump
 const STEP_SIZE := 18.0
+## How far (GoldSrc units) a goal point may be snapped and still count as the
+## bombsite; beyond this the walk-in target falls back to the site centre.
+const SITE_REACH := 260.0
 const MAX_LADDER_SPEED := 200.0
 const DUCK_SPEED_MULT := 0.34
 const CROUCH_TRANSITION := 0.12
