@@ -178,19 +178,25 @@ func _spawn_bot(team: String, index: int) -> void:
 
 
 func _grounded_spawn(spawn: Dictionary) -> Dictionary:
-	## Player starts can sit on brushwork with no collision under it (survivor's
-	## T spawn floats 0.8 m over a grate), so an actor placed exactly there
-	## falls straight through the level. Trace down from the recorded point and
-	## use the first real surface instead.
+	## Survivor ships T starts that sit over a void: the brushwork there has no
+	## collider, so an actor placed on the recorded point falls out of the map.
+	## Probe for real ground and, when there is none, use the closest walkable
+	## navmesh point -- but only a nearby one, because map_get_closest_point
+	## always answers and a far-away answer would teleport the bot elsewhere.
 	var point: Vector3 = spawn.get("pos", Vector3.ZERO)
-	var nav_map := get_world_3d().navigation_map
-	if _nav_mesh != null and NavigationServer3D.map_get_iteration_id(nav_map) != 0:
-		# The navmesh is baked from collision geometry, so it is the reliable
-		# answer for "where is the floor here". Keep the recorded XZ and take
-		# the mesh height, which tolerates a spawn a little above or below it.
-		var landed := NavigationServer3D.map_get_closest_point(nav_map, point)
-		if landed.distance_to(point) < 4.0:
-			point = Vector3(point.x, landed.y + 0.05, point.z)
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(point + Vector3.UP * 1.0, point - Vector3.UP * 6.0)
+	var hit := space.intersect_ray(query)
+	var on_solid := not hit.is_empty() and (hit["position"] as Vector3).y <= point.y + 1.0
+	if on_solid:
+		point = Vector3(point.x, (hit["position"] as Vector3).y + 0.05, point.z)
+	else:
+		var nav_map := get_world_3d().navigation_map
+		if _nav_mesh != null and NavigationServer3D.map_get_iteration_id(nav_map) != 0:
+			var landed := NavigationServer3D.map_get_closest_point(nav_map, point)
+			var gap := Vector2(landed.x - point.x, landed.z - point.z).length()
+			if gap <= 3.0:
+				point = Vector3(landed.x, landed.y + 0.05, landed.z)
 	var grounded := spawn.duplicate()
 	grounded["pos"] = point
 	return grounded

@@ -45,6 +45,9 @@ var _carrier_stall := 0
 var _carrier_stuck_for := 0.0
 var _best_goal_distance := INF
 var _goal_site_choice := ""
+## Per-bot position inside the site box, so a squad spreads out on arrival.
+var _slot_x := 0.5
+var _slot_z := 0.5
 var _stuck_count := 0
 var _last_position := Vector3.ZERO
 
@@ -52,6 +55,8 @@ var _last_position := Vector3.ZERO
 func configure(skill_value: float, weapons: Array) -> void:
 	skill = clampf(skill_value, 0.05, 0.98)
 	approach_offset = randf_range(-0.22, 0.22)
+	_slot_x = randf_range(0.15, 0.85)
+	_slot_z = randf_range(0.15, 0.85)
 	loadout = weapons.duplicate()
 	move_speed = 3.6 + skill * 1.6
 
@@ -403,9 +408,11 @@ func _scatter(goal: Dictionary) -> Vector3:
 	var hi: Vector3 = goal.get("max", Vector3.ZERO)
 	if hi == Vector3.ZERO and lo == Vector3.ZERO:
 		return centre
+	# Use a stable per-bot slot, not the (zero-until-first-jink) approach
+	# offset, or every bot in a squad would pick the same interior point.
 	var spot := centre
-	spot.x = lerpf(lo.x + 1.0, hi.x - 1.0, 0.5 + approach_offset)
-	spot.z = lerpf(lo.z + 1.0, hi.z - 1.0, 0.5 + randf_range(-0.35, 0.35))
+	spot.x = lerpf(lo.x + 1.2, hi.x - 1.2, _slot_x)
+	spot.z = lerpf(lo.z + 1.2, hi.z - 1.2, _slot_z)
 	spot.y = centre.y
 	return spot
 
