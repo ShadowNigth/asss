@@ -26,6 +26,10 @@ const STEP_SIZE := 18.0
 ## How far (GoldSrc units) a goal point may be snapped and still count as the
 ## bombsite; beyond this the walk-in target falls back to the site centre.
 const SITE_REACH := 260.0
+## A T carrying the C4 that has been stuck for this long is teleported to a
+## walkable point at the bombsite. Without it a single wedged carrier stalls
+## the whole round: nobody plants, so nothing resolves until the clock runs out.
+const CARRIER_RESCUE_AFTER := 45.0
 const MAX_LADDER_SPEED := 200.0
 const DUCK_SPEED_MULT := 0.34
 const CROUCH_TRANSITION := 0.12

@@ -40,6 +40,9 @@ var match_state: MatchState
 var _action_timer := 0.0
 var _stuck_time := 0.0
 var _hold_cooldown := 0.0
+var _heading := Vector3.ZERO
+var _carrier_stall := 0
+var _carrier_stuck_for := 0.0
 var _stuck_count := 0
 var _last_position := Vector3.ZERO
 
@@ -97,7 +100,7 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 			else:
 				target_position = guard
 		state = State.ADVANCE
-		_walk_to(target_position, delta)
+		_walk_to(target_position, delta, site_positions)
 		return
 
 	var desired := goal_site
@@ -116,13 +119,13 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		# reach), so fall back to the nearest walkable point to the centre.
 		target_position = _reachable(_scatter(goal))
 		var centre: Vector3 = goal.get("pos", Vector3.ZERO)
-		var flat := target_position - centre
-		flat.y = 0.0
-		if flat.length() > Cfg.SITE_REACH * Cfg.U2M:
+		var drift := target_position - centre
+		drift.y = 0.0
+		if drift.length() > Cfg.SITE_REACH * Cfg.U2M:
 			target_position = _reachable(centre)
 
 		state = State.ADVANCE
-	_walk_to(target_position, delta)
+	_walk_to(target_position, delta, site_positions)
 
 
 func _run_objective(delta: float, site_positions: Dictionary) -> bool:
@@ -217,7 +220,7 @@ func plant_time_left() -> float:
 	return maxf(0.0, Cfg.BOMB_PLANT_TIME - _action_timer)
 
 
-func _walk_to(target: Vector3, delta: float) -> void:
+func _walk_to(target: Vector3, delta: float, sites: Dictionary) -> void:
 	var flat := target - global_position
 	flat.y = 0.0
 	if flat.length() < 1.5:
@@ -238,6 +241,7 @@ func _walk_to(target: Vector3, delta: float) -> void:
 	if dir.length() < 0.05:
 		return
 	dir = dir.normalized()
+	_heading = dir
 	# Spread the team out on the way in: a per-bot lateral offset keeps squad
 	# mates from walking the exact same line into the same wall.
 	dir = (dir + dir.cross(Vector3.UP) * approach_offset).normalized()
@@ -255,7 +259,7 @@ func _walk_to(target: Vector3, delta: float) -> void:
 	# them on its own, so a bot walking at a step would wedge into it forever.
 	if is_on_wall():
 		_try_step_up(dir)
-	_detect_stuck(delta)
+	_detect_stuck(delta, sites)
 
 
 
@@ -282,17 +286,24 @@ func _try_step_up(dir: Vector3) -> void:
 	velocity.y = -0.1
 
 
-func _detect_stuck(delta: float) -> void:
+func _detect_stuck(delta: float, sites: Dictionary) -> void:
 	## Walking into a doorway lintel or a ledge lip is common in GoldSrc
 	## geometry. If the bot has not moved for a while, jink sideways and pick a
 	## new approach line instead of grinding against the wall forever.
 	_stuck_time += delta
+	if bomb_carrier:
+		_carrier_stuck_for += delta
+		if _carrier_stuck_for > Cfg.CARRIER_RESCUE_AFTER:
+			_carrier_stuck_for = 0.0
+			_rescue_carrier(sites)
 	if _stuck_time < 0.4:
 		return
 	if global_position.distance_to(_last_position) > 0.35:
 		_last_position = global_position
 		_stuck_time = 0.0
 		_stuck_count = 0
+		_carrier_stall = 0
+		_carrier_stuck_for = 0.0
 		return
 	_stuck_count += 1
 	_stuck_time = 0.0
@@ -300,11 +311,60 @@ func _detect_stuck(delta: float) -> void:
 	if _stuck_count < 3:
 		return
 	_stuck_count = 0
+	# A carrier that cannot reach the site strands the whole round (the bomb
+	# never plants and the CTs just wait). Give it a fresh approach line and
+	# reset the site choice rather than letting it grind out four minutes.
+	if bomb_carrier:
+		_carrier_stall += 1
+		if _carrier_stall >= 6:
+			_carrier_stall = 0
+			goal_site = ""
 	approach_offset = -approach_offset if absf(approach_offset) > 0.05 else randf_range(-0.3, 0.3)
 	# Hop: the lip is often just above the step height.
 	if is_on_floor():
 		velocity.y = Cfg.JUMP_IMPULSE * Cfg.U2M
+	_climb_ledge()
 
+
+
+func _rescue_carrier(sites: Dictionary) -> void:
+	## Last resort for a carrier that cannot path to the site: drop it on the
+	## navmesh next to the site it committed to. The bomb must not be able to
+	## strand a round, and every other failure above has already been tried.
+	var site := goal_site
+	if site.is_empty() or not sites.has(site):
+		return
+	var goal: Dictionary = sites[site]
+	var landing := _reachable(goal.get("pos", Vector3.ZERO))
+	if landing == Vector3.ZERO:
+		return
+	global_position = landing + Vector3.UP * 0.1
+	velocity = Vector3.ZERO
+	goal_site = ""
+
+
+func _climb_ledge() -> void:
+	## Some routes start with a ledge a metre high that the hull can neither
+	## walk nor jump onto (survivor's ridge). The navmesh already connects
+	## across it, so step up directly -- but only for a genuine ledge: a rise
+	## reached within a short distance, with head room above the landing.
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return
+	var here := NavigationServer3D.map_get_closest_point(map, global_position)
+	var ahead := NavigationServer3D.map_get_closest_point(map, global_position + _heading * 0.9)
+	var rise := ahead.y - here.y
+	if rise < 0.5 or rise > 1.6:
+		return
+	if Vector2(ahead.x - global_position.x, ahead.z - global_position.z).length() > 1.0:
+		return
+	var space := get_world_3d().direct_space_state
+	var probe := ahead + Vector3(0.0, 0.15, 0.0)
+	var query := PhysicsRayQueryParameters3D.create(probe, probe + Vector3(0.0, 1.9, 0.0))
+	if not space.intersect_ray(query).is_empty():
+		return
+	global_position = Vector3(ahead.x, global_position.y + rise + 0.05, ahead.z)
+	velocity.y = -0.1
 
 
 func _scatter(goal: Dictionary) -> Vector3:
