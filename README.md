@@ -125,7 +125,8 @@ tools/check_rounds.sh de_dust2 de_nuke  # or a subset
 ```
 
 `check_rounds.sh` boots each map headless with `--spectate`, lets the bots play
-and fails if no round reaches a result inside the frame budget. That is
+and fails if no round reaches a result inside the frame budget (all 15 maps
+pass at 26 000 frames; five of them also run in CI). That is
 deliberately the *only* assertion: the bot bugs this project actually hit were
 all variants of "the round never ends" (a wedged carrier, a re-randomised goal
 every frame, a spawn with no floor), and a nondeterministic bot match cannot
