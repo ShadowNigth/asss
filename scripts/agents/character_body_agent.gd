@@ -15,6 +15,8 @@ var team := "t"
 var health := 100
 var armor := 0
 var alive := true
+## Seconds of flashbang blindness left; a blinded bot drops its target.
+var blind_time := 0.0
 var movement_speed := 4.6
 var agent_index := 0
 var model_root: Node3D
@@ -96,6 +98,12 @@ func _mesh(size: Vector3, offset: Vector3, material: StandardMaterial3D, label: 
 	piece.position = offset
 	piece.name = label
 	model_root.add_child(piece)
+
+
+func flash() -> void:
+	## Bots keep shooting, but at nothing: a blinded bot loses its target and
+	## cannot re-acquire for a moment.
+	blind_time = maxf(blind_time, 1.5)
 
 
 func apply_damage(amount: int, from: String = "", headshot: bool = false, weapon: String = "") -> void:

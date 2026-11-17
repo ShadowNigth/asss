@@ -13,7 +13,7 @@ viewmodels for the first-person rig.
   volumes all come from the original `.bsp` files.
 * **GoldSrc movement** — 800 u/s² gravity, 301.99 u/s jump impulse, 5.5 ground
   accel, 12 air accel with the 30 u/s air cap, 5.2 friction, 18 u step height,
-  72/54 u hulls, ducking with a stand-up clearance check, ladders and swimming.
+  72/54 u hulls, ducking with a stand-up clearance check, and swimming.
 * **Weapons** — 28 retail entries (pistols, SMGs, rifles, snipers, shotguns,
   machine gun, grenades, knife, C4) with per-weapon recoil patterns, the CS
   spread model (standing/walking/jumping/crouching), armour penetration,
@@ -22,6 +22,10 @@ viewmodels for the first-person rig.
   $3250/$1400 economy with loss streaks, first to 16.
 * **Bots** — navmesh-driven T/CT agents that take sites, engage with
   line-of-sight checks, strafe and shoot.
+* **Grenades** — HE, flashbang and smoke are throwable: they bounce, fuse,
+  damage with distance falloff, blur the player's screen (and drop bot targets
+  for a moment), or pop a smoke cloud. Bots carry one each and lob it at a
+  target that is too far to shoot.
 * **Objective** — the C4 is carried by a terrorist, can be dropped by the
   carrier dying and picked back up by either side, and is planted/defused by
   bots **and** by you: hold `E` (or `use`) inside a bombsite with the bomb, or
@@ -73,6 +77,7 @@ Command line flags go after `--`:
 | Mouse 1 / 2 | fire / alt-fire (scope) |
 | R | reload (also restarts the match once it is over) |
 | 1–5 | primary, secondary, knife, grenade, C4 |
+| E (use) | plant or defuse (hold, standing still) |
 | Mouse wheel | cycle weapons |
 | B | buy menu (freeze time + first 20 s) |
 | E (use) | plant the C4 / defuse it (hold, standing still) |
@@ -140,5 +145,12 @@ the real engine.
   light baking in engine, so moving objects do not cast baked shadows.
 * Hostages and the `cs_*` escape objective are not implemented; only the
   bomb-defusal game mode exists.
+* The ladder code path in `player_movement.gd` is inert: none of the 15
+  `de_*` maps ship a ladder the converter could mark, so nothing ever sets the
+  `surface` metadata it looks for. Every climbable route in these maps is a
+  staircase or a ramp, which is what the bots use.
+* Brush doors are rebuilt from their brush volumes, not from their retail
+  models: they open like a sliding door and reuse a flat metal material rather
+  than the original texture.
 * Bots are single-mesh primitives, not the retail player models.
 * There is no netcode: the human is a local client, the bots run in-process.

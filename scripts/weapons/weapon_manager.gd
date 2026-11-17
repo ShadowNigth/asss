@@ -116,6 +116,9 @@ func _try_fire() -> void:
 		return
 	if current_id == "c4":
 		return
+	if str(state.data().get("slot", "")) == "grenade":
+		_throw_grenade(current_id)
+		return
 	if not state.can_fire(now):
 		return
 	if state.clip <= 0:
@@ -141,6 +144,28 @@ func _try_fire() -> void:
 	if controller.viewmodel != null:
 		controller.viewmodel.kick(current_id)
 		controller.viewmodel.muzzle_flash()
+
+
+func _throw_grenade(id: String) -> void:
+	## Grenades are consumed on throw and become a projectile with a fuse; the
+	## HE does area damage, the flash blinds, the smoke pops a cloud.
+	var state := current()
+	if state == null or state.clip <= 0:
+		return
+	state.clip -= 1
+	ammo_changed.emit(state.clip, state.reserve)
+	var origin := controller.eye_position()
+	var direction := controller.aim_direction()
+	var grenade := Grenade.new()
+	grenade.kind = id
+	get_tree().current_scene.add_child(grenade)
+	grenade.launch(origin, direction, 18.0, controller.player_name, controller.team)
+	Sound.play("switch", -6.0, 1.0)
+	if state.clip <= 0:
+		inventory.erase(id)
+		var remaining := _owned_slots()
+		if not remaining.is_empty():
+			equip(str(remaining[0]))
 
 
 func _melee() -> void:

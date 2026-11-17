@@ -44,6 +44,7 @@ var has_bomb := false
 var _objective_timer := 0.0
 var _objective_kind := ""
 var _step_distance := 0.0
+var blind_time := 0.0
 
 var _mouse_blocked := false
 
@@ -152,6 +153,7 @@ func _process(delta: float) -> void:
 	if viewmodel != null:
 		viewmodel.tick(delta, body.velocity, body.on_ground)
 	_tick_footsteps(delta)
+	blind_time = maxf(0.0, blind_time - delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -187,6 +189,13 @@ func _tick_footsteps(delta: float) -> void:
 		return
 	_step_distance = 0.0
 	Sound.footstep(global_position, false)
+
+
+func flash() -> void:
+	## A flashbang's real effect is on the screen: white out, then fade back.
+	if not alive:
+		return
+	blind_time = 1.6
 
 
 func add_armor(amount: int, with_helmet: bool) -> void:

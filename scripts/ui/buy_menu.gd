@@ -150,9 +150,9 @@ func _buy(entry: Dictionary) -> void:
 				player.add_armor(100, true)
 			"defuser":
 				player.has_defuse_kit = true
-			_:
-				# Grenades are not implemented yet, so do not take the money.
-				match_state.money[player.team] = int(match_state.money[player.team]) + price
+			"hegrenade", "flashbang", "smokegrenade":
+				player.weapon_manager.add_weapon(id, false)
+				player.weapon_manager.select_slot("grenade")
 		_refresh()
 		return
 	if not match_state.spend(player.team, price):

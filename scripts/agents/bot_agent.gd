@@ -44,6 +44,8 @@ var _heading := Vector3.ZERO
 var _carrier_stall := 0
 var _carrier_stuck_for := 0.0
 var _step_distance := 0.0
+var has_grenade := true
+var grenade_cooldown := 0.0
 var _best_goal_distance := INF
 var _goal_site_choice := ""
 ## Per-bot position inside the site box, so a squad spreads out on arrival.
@@ -88,7 +90,8 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 	# standing on a planted C4 defuses. Both actions are interruptible.
 	if _run_objective(delta, site_positions):
 		return
-	var enemy := _closest_visible(enemies)
+	var enemy := null if blind_time > 0.0 else _closest_visible(enemies)
+	_try_grenade(enemy, delta)
 	if enemy != null:
 		state = State.ENGAGE
 		_aim_at(enemy, delta)
@@ -294,7 +297,30 @@ func _walk_to(target: Vector3, delta: float, sites: Dictionary) -> void:
 		_try_step_up(dir)
 	_detect_stuck(delta, sites)
 	_tick_footsteps(delta)
+	_tick_blind(delta)
 
+
+
+func _try_grenade(enemy: Node3D, delta: float) -> void:
+	## A bot lobs one grenade at a visible enemy that is too far to shoot well,
+	## and only while it still owns one.
+	grenade_cooldown = maxf(0.0, grenade_cooldown - delta)
+	if enemy == null or grenade_cooldown > 0.0 or not has_grenade:
+		return
+	var distance := global_position.distance_to(enemy.global_position)
+	if distance < 6.0 or distance > 22.0:
+		return
+	has_grenade = false
+	grenade_cooldown = 25.0
+	var grenade := Grenade.new()
+	grenade.kind = "hegrenade"
+	get_tree().current_scene.add_child(grenade)
+	var aim := (enemy.global_position + Vector3.UP * 0.2 - eye_position()).normalized()
+	grenade.launch(eye_position(), aim, 16.0, display_name, team)
+
+
+func _tick_blind(delta: float) -> void:
+	blind_time = maxf(0.0, blind_time - delta)
 
 
 func _tick_footsteps(delta: float) -> void:

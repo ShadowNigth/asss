@@ -29,6 +29,7 @@ var kill_feed: VBoxContainer
 var banner_label: Label
 var _banner_time := 0.0
 var match_over_label: Label
+var flash_overlay: ColorRect
 var hit_marker_time := 0.0
 var show_fps := false
 
@@ -103,6 +104,11 @@ func _build() -> void:
 	match_over_label.set_anchors_preset(Control.PRESET_CENTER)
 	match_over_label.custom_minimum_size = Vector2(840, 0)
 	match_over_label.visible = false
+	flash_overlay = ColorRect.new()
+	flash_overlay.color = Color(1.0, 1.0, 1.0, 0.0)
+	flash_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(flash_overlay)
 
 
 func _label(offset: Vector2, size: int, alignment: int) -> Label:
@@ -127,6 +133,9 @@ func _process(delta: float) -> void:
 			banner_label.visible = false
 	if player == null or not is_instance_valid(player):
 		return
+	if flash_overlay != null:
+		var alpha := clampf(player.blind_time / 1.6, 0.0, 1.0) * 0.95
+		flash_overlay.color = Color(1.0, 1.0, 1.0, alpha)
 	health_label.text = "%d HP" % player.health if player.armor <= 0 else "%d HP  %d AP" % [player.health, player.armor]
 	var state := player.weapon_manager.current() if player.weapon_manager != null else null
 	if state != null:
@@ -203,6 +212,11 @@ func show_match_over(winner: String, score_t: int, score_ct: int) -> void:
 func hide_match_over() -> void:
 	if match_over_label != null:
 		match_over_label.visible = false
+	flash_overlay = ColorRect.new()
+	flash_overlay.color = Color(1.0, 1.0, 1.0, 0.0)
+	flash_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(flash_overlay)
 
 
 func show_banner(text: String) -> void:
