@@ -21,6 +21,8 @@ var buy_menu: CanvasLayer
 var scoreboard: CanvasLayer
 var navigation_region: NavigationRegion3D
 var effects: Node3D
+var bomb_marker: MeshInstance3D
+var _beep_timer := 0.0
 var bot_names := ["Cliffe", "Minh", "Gooseman", "ZooL", "Barney", "Gina", "Vitaliy", "Vlad", "Simmons"]
 var boot_time := 0.0
 var ready_boot := false
@@ -35,6 +37,7 @@ func _ready() -> void:
 	_build_world()
 	_build_agents()
 	_build_ui()
+	Sound._attach_world(self)
 	if match_state != null:
 		match_state.start()
 	ready_boot = true
@@ -69,6 +72,11 @@ func _build_world() -> void:
 	match_state = MatchState.new()
 	match_state.bomb_exploded.connect(_on_bomb_exploded)
 	match_state.round_started.connect(_on_round_started)
+	match_state.round_ended.connect(_on_round_ended)
+	match_state.bomb_planted.connect(_on_bomb_planted)
+	match_state.bomb_defused.connect(_on_bomb_defused)
+	if not match_state.match_over.is_connected(_on_match_over):
+		match_state.match_over.connect(_on_match_over)
 	match_state.name = "MatchState"
 	add_child(match_state)
 	_build_light_entities()
@@ -104,18 +112,32 @@ func _build_agents() -> void:
 	add_child(navigation_region)
 	_bake_navigation()
 
+	if match_state != null:
+		match_state.sites = map_loader.map_data.bomb_sites
 	var spawn := _grounded_spawn(map_loader.spawn_for_index(Cfg.start_team, 0))
 	player = PlayerController.new()
 	player.name = "Player"
 	add_child(player)
 	player.setup(spawn, Cfg.start_team, true)
+	player.match_state = match_state
+	if Cfg.spectator:
+		_bench_player()
 	player.died.connect(_on_player_died)
+	player.killed.connect(_on_agent_killed)
+	if player.body != null:
+		player.body.landed.connect(_on_player_landed)
 	agents.append(player)
 
 	if Cfg.no_bots:
 		return
 	var team_t := Cfg.bots / 2
 	var team_ct := Cfg.bots - team_t
+	if Cfg.spectator:
+		# The human body is parked out of play, so give its slot to a bot.
+		if Cfg.start_team == "ct":
+			team_ct += 1
+		else:
+			team_t += 1
 	for index in team_t:
 		_spawn_bot("t", index)
 	for index in team_ct:
@@ -128,8 +150,10 @@ func _on_round_started(_number: int, _freeze: float) -> void:
 	## on a terrorist and the CT defuse kits are re-rolled.
 	_respawn_team("t")
 	_respawn_team("ct")
-	if player != null and is_instance_valid(player):
-		player.teleport_to(_grounded_spawn(map_loader.spawn_for_index("t", 0)))
+	if player != null and is_instance_valid(player) and Cfg.spectator:
+		_bench_player()
+	elif player != null and is_instance_valid(player):
+		player.teleport_to(_grounded_spawn(map_loader.spawn_for_index(player.team, 0)))
 	_assign_bomb()
 
 
@@ -142,12 +166,36 @@ func _respawn_team(team: String) -> void:
 		slot += 1
 
 
+func _bench_player() -> void:
+	## Park the human body far below the map and stop simulating it, so a
+	## spectator run is decided purely by the bots.
+	player.has_bomb = false
+	player.alive = false
+	player.visible = false
+	player.set_process(false)
+	player.set_physics_process(false)
+	if player.body != null:
+		player.body.frozen = true
+		player.body.global_position = Vector3(0.0, -2000.0, 0.0)
+
+
 func _assign_bomb() -> void:
 	## One T carries the C4; half the CTs spawn with a defuse kit, as in retail.
+	## When the human plays terrorist he takes the C4 himself, so the round does
+	## not depend on a bot for the whole objective.
 	for agent in bots:
 		agent.bomb_carrier = false
 		agent.has_bomb = false
 		agent.frozen = false
+	if player != null and is_instance_valid(player):
+		player.has_bomb = false
+	var human_carries: bool = (not Cfg.spectator) and player != null and is_instance_valid(player) \
+			and player.team == "t" and player.alive
+	if human_carries:
+		player.has_bomb = true
+		if match_state != null:
+			match_state.bomb_carrier = player.player_name
+		return
 	var terrorists: Array = []
 	for agent in bots:
 		if agent.team == "t":
@@ -161,6 +209,9 @@ func _assign_bomb() -> void:
 	for agent in bots:
 		if agent.team == "ct":
 			agent.has_defuse_kit = randf() < 0.5
+	if player != null and is_instance_valid(player):
+		# A human buys the kit; it is not handed out for free.
+		player.has_defuse_kit = false
 
 
 func _spawn_bot(team: String, index: int) -> void:
@@ -172,6 +223,8 @@ func _spawn_bot(team: String, index: int) -> void:
 	agent.reset_actor(spawn, team)
 	agent.configure(Cfg.BOT_SKILL + randf_range(-0.12, 0.12), _bot_loadout(team))
 	agent.match_state = match_state
+	agent.died.connect(_on_bot_died)
+	agent.killed.connect(_on_agent_killed)
 	agent.add_to_group("damageable")
 	bots.append(agent)
 	agents.append(agent)
@@ -301,6 +354,7 @@ func _build_ui() -> void:
 
 func _on_bomb_exploded() -> void:
 	## Everything inside the blast radius dies; armour does not help.
+	Sound.play_at("explosion", match_state.bomb_position, 2.0, 1.0, 120.0)
 	var radius := Cfg.BOMB_DAMAGE_RADIUS * Cfg.U2M
 	for agent in agents:
 		if agent == null or not is_instance_valid(agent) or not agent.alive:
@@ -310,6 +364,121 @@ func _on_bomb_exploded() -> void:
 			continue
 		var falloff := clampf(1.0 - distance / radius, 0.15, 1.0)
 		agent.apply_damage(int(500.0 * falloff), "C4", false)
+
+
+func _tick_bomb_beep(delta: float) -> void:
+	## The armed C4 beeps: slow at first, every half second in the last ten.
+	if match_state.bomb_state != "planted":
+		_beep_timer = 0.0
+		return
+	_beep_timer -= delta
+	if _beep_timer > 0.0:
+		return
+	var fuse := match_state.bomb_timer
+	_beep_timer = 0.28 if fuse < 10.0 else (0.6 if fuse < 20.0 else 1.0)
+	Sound.play_at("beep", match_state.bomb_position, -6.0, 1.0, 40.0)
+
+
+func _update_bomb_marker() -> void:
+	## A visible C4 model: on the ground while dropped, blinking on the site
+	## once planted, hidden while it is still in someone's hands.
+	if bomb_marker == null:
+		bomb_marker = MeshInstance3D.new()
+		bomb_marker.name = "BombMarker"
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(0.28, 0.16, 0.2)
+		bomb_marker.mesh = mesh
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.55, 0.35, 0.12)
+		material.emission_enabled = true
+		material.emission = Color(1.0, 0.25, 0.1)
+		material.emission_energy_multiplier = 1.4
+		bomb_marker.material_override = material
+		effects.add_child(bomb_marker)
+	var state: String = match_state.bomb_state
+	bomb_marker.visible = state == "planted" or state == "dropped"
+	if not bomb_marker.visible:
+		return
+	bomb_marker.global_position = match_state.bomb_position + Vector3.UP * 0.12
+	# Blink faster as the fuse runs down.
+	var rate := 4.0 if state == "planted" else 1.5
+	bomb_marker.visible = fmod(boot_time * rate, 1.0) > 0.35 or state == "dropped"
+
+
+func _on_match_over(winner: String, score_t: int, score_ct: int) -> void:
+	if hud != null:
+		hud.show_match_over(winner, score_t, score_ct)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	## After the match ends, R starts a fresh one without reloading the map.
+	if match_state == null or match_state.phase != MatchState.Phase.MATCH_OVER:
+		return
+	if event.is_action_pressed("reload"):
+		if hud != null:
+			hud.hide_match_over()
+		match_state.restart()
+		_on_round_started(1, Cfg.FREEZE_TIME)
+
+
+func _on_player_landed(impact_speed: float) -> void:
+	if impact_speed > 3.0:
+		Sound.play("land", -8.0 + minf(impact_speed, 8.0))
+
+
+func _on_bomb_planted(_site: String, _timer: float) -> void:
+	Sound.play("plant", -2.0)
+
+
+func _on_bomb_defused() -> void:
+	Sound.play("defuse", -2.0)
+
+
+func _on_agent_killed(victim: String, killer: String, weapon: String, headshot: bool) -> void:
+	if hud == null:
+		return
+	hud.add_kill(victim, killer, weapon, headshot)
+
+
+func _on_round_ended(winner: String, reason: String) -> void:
+	if hud == null:
+		return
+	var line := "Terrorists win" if winner == "t" else "Counter-Terrorists win"
+	hud.show_banner("%s — %s" % [line, reason])
+	var mine := "t" if player != null and player.team == "t" else "ct"
+	Sound.play("round_win" if winner == mine else "round_lose", -5.0)
+
+
+func _on_bot_died(who: Node) -> void:
+	## A carrier that dies before planting leaves the C4 on the ground; a
+	## surviving terrorist can pick it up, exactly like retail.
+	if who == null or match_state == null:
+		return
+	var bot := who as BotAgent
+	if bot == null or not bot.bomb_carrier:
+		return
+	bot.bomb_carrier = false
+	bot.has_bomb = false
+	match_state.drop_bomb(bot.global_position)
+
+
+func _update_bomb_pickup() -> void:
+	## Anyone on the T side can recover a dropped C4 by walking over it.
+	if match_state == null or match_state.bomb_state != "dropped":
+		return
+	for agent in bots:
+		if agent == null or not is_instance_valid(agent) or not agent.alive or agent.team != "t":
+			continue
+		if agent.global_position.distance_to(match_state.bomb_position) > 1.6:
+			continue
+		agent.bomb_carrier = true
+		agent.has_bomb = true
+		match_state.pick_up_bomb(agent.display_name)
+		return
+	if player != null and is_instance_valid(player) and player.alive and player.team == "t":
+		if player.global_position.distance_to(match_state.bomb_position) <= 1.6:
+			player.has_bomb = true
+			match_state.pick_up_bomb(player.player_name)
 
 
 func _on_player_died(killer: String) -> void:
@@ -322,6 +491,9 @@ func _process(delta: float) -> void:
 	if match_state == null or not match_state.running:
 		return
 	_update_agents(delta)
+	_update_bomb_pickup()
+	_update_bomb_marker()
+	_tick_bomb_beep(delta)
 	_update_alive_counts()
 	_emit_telemetry(delta)
 	if _need_nav_probe and boot_time > 1.0:

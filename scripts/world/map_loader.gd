@@ -15,6 +15,7 @@ var map_data: MapData
 var world_root: Node3D
 var collision_body: StaticBody3D
 var water_root: Node3D
+var door_root: Node3D
 var used_materials: Array = []
 var stats := {}
 
@@ -39,6 +40,7 @@ func build(map_name: String) -> bool:
 	_build_geometry()
 	_build_collision()
 	_build_water()
+	_build_doors()
 	return true
 
 
@@ -154,6 +156,21 @@ func _build_collision() -> void:
 	add_child(collision_body)
 	stats["collision_triangles"] = faces.size() / 3
 	stats["dropped_triangles"] = dropped
+
+
+func _build_doors() -> void:
+	## Brush doors are absent from the world model, so without this the map has
+	## a hole (and a missing wall) exactly where each door belongs.
+	door_root = null
+	if map_data.doors.is_empty():
+		return
+	door_root = Node3D.new()
+	door_root.name = "Doors"
+	add_child(door_root)
+	for entry in map_data.doors:
+		var door := SlidingDoor.new()
+		door.setup(entry["min"], entry["max"])
+		door_root.add_child(door)
 
 
 func _build_water() -> void:

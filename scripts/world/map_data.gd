@@ -22,6 +22,10 @@ var bounds_max := Vector3.ZERO
 var spawns: Array = []
 var bomb_sites: Array = []
 var buy_zones: Array = []
+## Sliding doors as {min: Vector3, max: Vector3}: the brush volumes retail uses
+## for `func_door`. They are cut out of the collision shell and driven as
+## animated bodies, because a door welded into the world trimesh never opens.
+var doors: Array = []
 var lights: Array = []
 var water_volumes: Array = []
 var sky: Dictionary = {}
@@ -62,6 +66,7 @@ func load_map(path: String) -> bool:
 		})
 	bomb_sites = _convert_sites(header.get("bomb_sites", []) as Array)
 	buy_zones = header.get("buy_zones", []) as Array
+	doors = _convert_boxes(header.get("doors", []) as Array)
 	lights = header.get("lights", []) as Array
 	water_volumes = header.get("water_volumes", []) as Array
 	var min_raw: Array = header.get("bounds", {}).get("min", [0, 0, 0])
@@ -105,6 +110,26 @@ func load_map(path: String) -> bool:
 		})
 	file.close()
 	return true
+
+
+func _convert_boxes(raw: Array) -> Array:
+	## The converter already emits world-space bounds (x east, y up, z south),
+	## so these only need normalising into Vector3s.
+	var out: Array = []
+	for entry in raw:
+		var e: Dictionary = entry
+		var bounds: Dictionary = e.get("bounds", {})
+		var lo: Array = bounds.get("min", [])
+		var hi: Array = bounds.get("max", [])
+		if lo.size() < 3 or hi.size() < 3:
+			continue
+		var a := Vector3(float(lo[0]), float(lo[1]), float(lo[2]))
+		var b := Vector3(float(hi[0]), float(hi[1]), float(hi[2]))
+		out.append({
+			"min": Vector3(minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z)),
+			"max": Vector3(maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z)),
+		})
+	return out
 
 
 func _convert_sites(raw: Array) -> Array:

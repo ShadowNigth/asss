@@ -22,6 +22,7 @@ boot_splash/bg_color=Color(0.05, 0.05, 0.06, 1)
 
 Cfg="*res://scripts/core/game_config.gd"
 Weapons="*res://scripts/core/weapon_db.gd"
+Sound="*res://scripts/core/sound.gd"
 
 [display]
 

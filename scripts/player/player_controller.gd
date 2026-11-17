@@ -9,6 +9,11 @@ extends Node3D
 signal weapon_changed(id: String)
 signal health_changed(health: int, armor: int)
 signal died(killer: String)
+signal killed(victim: String, killer: String, weapon: String, headshot: bool)
+## Emitted while the C4 is being planted or defused, so the HUD can show a
+## progress bar; `progress` is 0..1 and `label` is what is being done.
+signal objective_progress(progress: float, label: String)
+signal objective_cancelled
 
 const MOUSE_SENSITIVITY := 0.0022
 const PITCH_LIMIT := deg_to_rad(89.0)
@@ -32,6 +37,13 @@ var pitch := 0.0
 var recoil_offset := Vector2.ZERO
 var fov_target := Cfg.FOV
 var zoom_level := 0
+## Round state, injected by `Game` so the local player can plant and defuse.
+var match_state: MatchState
+var has_defuse_kit := false
+var has_bomb := false
+var _objective_timer := 0.0
+var _objective_kind := ""
+var _step_distance := 0.0
 
 var _mouse_blocked := false
 
@@ -139,10 +151,14 @@ func _process(delta: float) -> void:
 	camera.fov = lerpf(camera.fov, fov_target, clampf(delta * 8.0, 0.0, 1.0))
 	if viewmodel != null:
 		viewmodel.tick(delta, body.velocity, body.on_ground)
+	_tick_footsteps(delta)
 
 
 func _physics_process(delta: float) -> void:
 	if body == null or not alive:
+		_cancel_objective()
+		return
+	if _tick_objective(delta):
 		return
 	var input_dir := Vector2.ZERO
 	if body.input_enabled and mouse_captured or (body.input_enabled and Cfg.no_mouse):
@@ -158,7 +174,84 @@ func _physics_process(delta: float) -> void:
 			Input.is_action_pressed("alt_fire"), Input.is_action_just_pressed("reload"))
 
 
-func apply_damage(amount: int, from: String = "", headshot: bool = false) -> void:
+func _tick_footsteps(delta: float) -> void:
+	## Steps are distance-driven, so walking is quiet and running is not.
+	if body == null or not body.on_ground:
+		return
+	var speed := Vector2(body.velocity.x, body.velocity.z).length()
+	if speed < 0.6:
+		_step_distance = 0.0
+		return
+	_step_distance += speed * delta
+	if _step_distance < 2.1:
+		return
+	_step_distance = 0.0
+	Sound.footstep(global_position, false)
+
+
+func add_armor(amount: int, with_helmet: bool) -> void:
+	armor = clampi(amount, 0, 100)
+	if with_helmet:
+		helmet = true
+	health_changed.emit(health, armor)
+
+
+func _site_here() -> String:
+	## The bombsite whose brush volume the player is standing in. Sites are up
+	## to 19 m across, so the real bounds decide, not a radius round the centre.
+	if match_state == null:
+		return ""
+	return match_state.site_at(global_position)
+
+
+func _tick_objective(delta: float) -> bool:
+	## Planting and defusing mirror the bot rules: hold the use key, stand
+	## still, and the timer resets if you walk away or the state changes.
+	if match_state == null or match_state.phase != MatchState.Phase.LIVE:
+		_cancel_objective()
+		return false
+	var kind := ""
+	var want := 0.0
+	if team == "t" and has_bomb and match_state.bomb_state == "carried":
+		kind = "plant" if not _site_here().is_empty() else ""
+		want = Cfg.BOMB_PLANT_TIME
+	elif team == "ct" and match_state.bomb_state == "planted":
+		var near := global_position.distance_to(match_state.bomb_position) <= 1.9
+		kind = "defuse" if near else ""
+		want = Cfg.BOMB_DEFUSE_KIT_TIME if has_defuse_kit else Cfg.BOMB_DEFUSE_TIME
+	if kind.is_empty():
+		_cancel_objective()
+		return false
+	if not Input.is_action_pressed("use"):
+		_cancel_objective()
+		objective_progress.emit(0.0, "get closer" if kind == "defuse" else "hold use to plant")
+		return false
+	if _objective_kind != kind:
+		_objective_kind = kind
+		_objective_timer = 0.0
+	# Standing still is required: any movement cancels the action, as in retail.
+	body.set_intent(Vector3.ZERO, Input.is_action_pressed("crouch"), false, false)
+	_objective_timer += delta
+	objective_progress.emit(clampf(_objective_timer / want, 0.0, 1.0), "planting" if kind == "plant" else "defusing")
+	if _objective_timer >= want:
+		if kind == "plant":
+			match_state.plant_bomb(_site_here(), global_position)
+			has_bomb = false
+		else:
+			match_state.defuse_bomb()
+		_cancel_objective()
+	return true
+
+
+func _cancel_objective() -> void:
+	if _objective_kind.is_empty():
+		return
+	_objective_kind = ""
+	_objective_timer = 0.0
+	objective_cancelled.emit()
+
+
+func apply_damage(amount: int, from: String = "", headshot: bool = false, weapon: String = "") -> void:
 	if not alive:
 		return
 	var damage := amount
@@ -172,17 +265,12 @@ func apply_damage(amount: int, from: String = "", headshot: bool = false) -> voi
 		alive = false
 		health = 0
 		body.frozen = true
+		killed.emit(player_name, from, weapon, headshot)
 		died.emit(from)
 
 
 func heal(amount: int) -> void:
 	health = mini(100, health + amount)
-	health_changed.emit(health, armor)
-
-
-func add_armor(amount: int, with_helmet: bool) -> void:
-	armor = mini(100, armor + amount)
-	helmet = helmet or with_helmet
 	health_changed.emit(health, armor)
 
 

@@ -13,6 +13,7 @@ assets/
   maps/<map>/sky.png           retail skybox reprojected to equirectangular
   maps/manifest.json           per-map conversion summary
   cs2go/models/…               viewmodels, gloves, knife, first-person hands
+  audio/*.wav                  synthesised effects (shots, steps, C4, stingers)
 ```
 
 ## Sources
@@ -116,7 +117,20 @@ python3 tools/build_assets.py --report
 
 # CS2 viewmodels / gloves / knife -> assets/cs2go/models
 python3 tools/cs2go/fetch_assets.py
+
+# sound effects -> assets/audio  (20 mono 16-bit WAVs, ~600 KB in total)
+python3 tools/audio/make_sounds.py
 ```
+
+## Audio
+
+There is no retail sound data in the sources above, so every effect under
+`assets/audio` is synthesised by `tools/audio/make_sounds.py` from seeded noise
+and oscillators: five weapon-report classes, knife, reload, three footstep
+variants, landing, world impact, flesh hit, the C4 beep/plant/defuse cues, the
+explosion, and win/loss stingers. `scripts/core/sound.gd` maps each weapon to
+one of the shot classes and plays everything else positionally through an
+8-voice pool, so a distant firefight is quieter and panned by the listener.
 
 Both scripts are idempotent and need `numpy` + `Pillow` (and `gh` for the CS2
 mirror, whose blobs are pulled through the GitHub API because the sandbox

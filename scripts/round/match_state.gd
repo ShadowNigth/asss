@@ -13,6 +13,7 @@ signal money_changed(money: int)
 signal bomb_planted(site: String, timer: float)
 signal bomb_defused()
 signal bomb_exploded()
+signal match_over(winner: String, score_t: int, score_ct: int)
 
 enum Phase { FREEZE, LIVE, ENDED, MATCH_OVER }
 
@@ -29,6 +30,11 @@ var bomb_site := ""
 ## Where the C4 lies once planted (Godot space), and who can pick it up again.
 var bomb_position := Vector3.ZERO
 var bomb_carrier := ""
+## True while the C4 is lying on the ground after its carrier died, so a
+## surviving terrorist can walk over it and pick it back up.
+var bomb_dropped := false
+## Bomb-site brushes for this map: [{name, pos, min, max}], injected by Game.
+var sites: Array = []
 var round_time := Cfg.ROUND_TIME
 var buy_time_left := Cfg.BUY_TIME
 var loss_streak := {"t": 0, "ct": 0}
@@ -58,6 +64,7 @@ func _begin_freeze() -> void:
 	bomb_timer = 0.0
 	bomb_site = ""
 	bomb_position = Vector3.ZERO
+	bomb_dropped = false
 	bomb_carrier = ""
 	phase_changed.emit(PHASE_NAMES[phase])
 	round_started.emit(round_number, phase_time)
@@ -125,11 +132,53 @@ func _finish_match() -> void:
 	phase_time = 0.0
 	running = false
 	phase_changed.emit(PHASE_NAMES[phase])
+	match_over.emit("t" if score_t >= score_ct else "ct", score_t, score_ct)
+
+
+func restart() -> void:
+	## Start a fresh match without reloading the map.
+	start()
+
+
+func site_at(position: Vector3) -> String:
+	## Name of the bombsite whose brush volume contains `position`, or "".
+	for site in sites:
+		var lo: Vector3 = site.get("min", Vector3.ZERO)
+		var hi: Vector3 = site.get("max", Vector3.ZERO)
+		# Horizontal containment only: bomb-target brushes often float above
+		# the floor the player actually stands on.
+		if position.x >= lo.x - 0.6 and position.x <= hi.x + 0.6 and position.z >= lo.z - 0.6 and position.z <= hi.z + 0.6:
+			return str(site.get("name", ""))
+	return ""
+
+
+func drop_bomb(position: Vector3) -> bool:
+	## The carrier died before planting: the C4 is now on the ground where he
+	## fell, and the first surviving terrorist to reach it takes it again.
+	if bomb_state != "carried" or phase != Phase.LIVE:
+		return false
+	bomb_state = "dropped"
+	bomb_dropped = true
+	bomb_position = position
+	bomb_carrier = ""
+	return true
+
+
+func pick_up_bomb(who: String) -> bool:
+	if bomb_state != "dropped":
+		return false
+	bomb_state = "carried"
+	bomb_dropped = false
+	bomb_carrier = who
+	return true
 
 
 func plant_bomb(site: String, position: Vector3 = Vector3.ZERO) -> bool:
-	if bomb_state != "carried" or phase != Phase.LIVE:
+	if bomb_state != "carried" and bomb_state != "dropped":
 		return false
+	if phase != Phase.LIVE:
+		return false
+	bomb_dropped = false
 	bomb_state = "planted"
 	bomb_site = site
 	bomb_position = position

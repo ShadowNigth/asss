@@ -120,10 +120,11 @@ func _is_headshot(victim: Node, point: Vector3) -> bool:
 func _apply_hit(victim: Node, damage: int, weapon_id: String, headshot: bool) -> void:
 	var attacker := owner_controller.player_name if owner_controller != null else "world"
 	if victim.has_method("apply_damage"):
-		victim.call("apply_damage", damage, attacker, headshot)
+		victim.call("apply_damage", damage, attacker, headshot, weapon_id)
 	elif victim.has_method("take_damage"):
 		victim.call("take_damage", damage)
 	_spawn_impact(victim.global_position, -_flat_direction(victim), true)
+	Sound.play_at("flesh", victim.global_position, -4.0, randf_range(0.9, 1.1), 25.0)
 
 
 func _flat_direction(target: Node) -> Vector3:
@@ -138,6 +139,8 @@ func _spawn_impact(point: Vector3, normal: Vector3, blood: bool = false) -> void
 	if holder == null:
 		return
 	var color := Color(0.55, 0.06, 0.06) if blood else Color(0.82, 0.78, 0.66)
+	if not blood:
+		Sound.play_at("impact", point, -8.0, randf_range(0.85, 1.2), 30.0)
 	var burst := CPUParticles3D.new()
 	burst.one_shot = true
 	burst.amount = 7

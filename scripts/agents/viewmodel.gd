@@ -35,6 +35,33 @@ func setup(camera_ref: Camera3D) -> void:
 	add_child(light)
 
 
+func muzzle_flash() -> void:
+	## A short bright flash at the muzzle plus a light pop, so firing reads even
+	## when the shot itself misses.
+	if model_root == null:
+		return
+	var flash := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.035
+	sphere.height = 0.07
+	flash.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(1.0, 0.86, 0.45)
+	material.emission_enabled = true
+	material.emission = Color(1.0, 0.8, 0.35)
+	material.emission_energy_multiplier = 4.0
+	flash.material_override = material
+	flash.position = Vector3(0.0, 0.02, -0.42)
+	add_child(flash)
+	var light := OmniLight3D.new()
+	light.light_energy = 1.6
+	light.omni_range = 3.0
+	light.light_color = Color(1.0, 0.82, 0.5)
+	flash.add_child(light)
+	get_tree().create_timer(0.045).timeout.connect(flash.queue_free)
+
+
 func equip(id: String) -> void:
 	current_id = id
 	if current_model != null:

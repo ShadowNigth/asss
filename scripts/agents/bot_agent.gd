@@ -43,6 +43,7 @@ var _hold_cooldown := 0.0
 var _heading := Vector3.ZERO
 var _carrier_stall := 0
 var _carrier_stuck_for := 0.0
+var _step_distance := 0.0
 var _best_goal_distance := INF
 var _goal_site_choice := ""
 ## Per-bot position inside the site box, so a squad spreads out on arrival.
@@ -96,6 +97,19 @@ func think(delta: float, enemies: Array, site_positions: Dictionary) -> void:
 		_strafe(delta, enemy)
 		return
 
+	# A dropped C4 comes first: a T who is not carrying it must go and get it,
+	# otherwise the round can never be won after the carrier dies.
+	if match_state != null and match_state.bomb_state == "dropped" and team == "t":
+		if global_position.distance_to(match_state.bomb_position) < 1.6:
+			match_state.pick_up_bomb(display_name)
+			bomb_carrier = true
+			has_bomb = true
+			return
+		state = State.ADVANCE
+		target_position = match_state.bomb_position
+		_best_goal_distance = INF
+		_walk_to(target_position, delta, site_positions)
+		return
 	# A planted C4 overrides every other goal: CTs converge on it, Ts guard it.
 	if match_state != null and match_state.bomb_state == "planted":
 		if state == State.HOLD:
@@ -279,7 +293,23 @@ func _walk_to(target: Vector3, delta: float, sites: Dictionary) -> void:
 	if is_on_wall():
 		_try_step_up(dir)
 	_detect_stuck(delta, sites)
+	_tick_footsteps(delta)
 
+
+
+func _tick_footsteps(delta: float) -> void:
+	## Positional steps, so a bot can be heard coming round a corner.
+	if not is_on_floor():
+		return
+	var speed := Vector2(velocity.x, velocity.z).length()
+	if speed < 0.6:
+		_step_distance = 0.0
+		return
+	_step_distance += speed * delta
+	if _step_distance < 2.1:
+		return
+	_step_distance = 0.0
+	Sound.footstep(global_position, true)
 
 
 func _try_step_up(dir: Vector3) -> void:
@@ -519,6 +549,8 @@ func _fire(enemy: Node3D) -> void:
 	if data.is_empty():
 		return
 	fire_cooldown = float(data.get("fire_rate", 0.1)) * randf_range(1.1, 2.4)
+	Sound.play_shot(weapon_id, global_position + Vector3.UP * 1.5, true)
+	_muzzle_flash()
 	var origin := eye_position()
 	var dir := ((enemy.global_position + Vector3.UP * 1.35) - origin).normalized()
 	var spread := lerpf(6.0, 1.2, skill)
@@ -543,9 +575,25 @@ func _fire(enemy: Node3D) -> void:
 			var headshot: bool = (hit["position"] as Vector3).y > victim.global_position.y + 1.5
 			if headshot:
 				damage = int(damage * Cfg.HEADSHOT_MULTIPLIER)
-			victim.call("apply_damage", damage, display_name, headshot)
+			victim.call("apply_damage", damage, display_name, headshot, weapon_id)
 			return
 		victim = victim.get_parent()
+
+
+func _muzzle_flash() -> void:
+	## A quick unshaded blob at the gun so a firing bot is readable at range.
+	var flash := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.05
+	sphere.height = 0.1
+	flash.mesh = sphere
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(1.0, 0.85, 0.45)
+	flash.material_override = material
+	add_child(flash)
+	flash.global_position = global_position + Vector3.UP * 1.5 - global_transform.basis.z * 0.55
+	get_tree().create_timer(0.05).timeout.connect(flash.queue_free)
 
 
 func _best_weapon() -> String:

@@ -86,6 +86,8 @@ var quality := "high"
 var no_mouse := false
 var headless_display := false
 var start_team := "t"
+## Spectator mode: no human body is simulated, bots play both sides.
+var spectator := false
 ## Seconds between gameplay telemetry lines in headless mode (0 = off).
 var telemetry_interval := 0.0
 
@@ -109,6 +111,8 @@ func _parse_args() -> void:
 					map_name = value
 			"bots":
 				bots = int(value)
+			"spectate":
+				spectator = true
 			"no-bots":
 				no_bots = true
 				bots = 0

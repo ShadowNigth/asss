@@ -135,10 +135,12 @@ func _try_fire() -> void:
 	var origin := controller.eye_position()
 	var direction := controller.aim_direction()
 	controller.combat.fire(current_id, origin, direction, spread)
+	Sound.play_shot(current_id, origin, false, -3.0)
 	_apply_kick()
 	fired.emit(current_id)
 	if controller.viewmodel != null:
 		controller.viewmodel.kick(current_id)
+		controller.viewmodel.muzzle_flash()
 
 
 func _melee() -> void:
@@ -147,6 +149,7 @@ func _melee() -> void:
 	var origin := controller.eye_position()
 	var direction := controller.aim_direction()
 	controller.combat.fire("knife", origin, direction, 0.0)
+	Sound.play("knife", -4.0, randf_range(0.95, 1.05))
 	_switch_until = now + 0.35
 	fired.emit("knife")
 	if controller.viewmodel != null:
@@ -154,6 +157,7 @@ func _melee() -> void:
 
 
 func start_reload() -> void:
+	Sound.play("reload", -6.0, randf_range(0.95, 1.05))
 	var state := current()
 	if state == null:
 		return

@@ -22,9 +22,15 @@ viewmodels for the first-person rig.
   $3250/$1400 economy with loss streaks, first to 16.
 * **Bots** — navmesh-driven T/CT agents that take sites, engage with
   line-of-sight checks, strafe and shoot.
+* **Objective** — the C4 is carried by a terrorist, can be dropped by the
+  carrier dying and picked back up by either side, and is planted/defused by
+  bots **and** by you: hold `E` (or `use`) inside a bombsite with the bomb, or
+  on the planted bomb for 10 s (5 s with a defuse kit).
 * **Presentation** — per-map panorama skies generated from the retail
-  `gfx/env` faces, fog/mood per map, a CS-style HUD with radar, buy menu and
-  scoreboard.
+  `gfx/env` faces, fog/mood per map, a CS-style HUD with radar, buy menu,
+  scoreboard, kill feed and round banner, blocky but visible soldier models
+  for the bots, muzzle flashes, and synthesised audio for every weapon class,
+  footsteps, bullet impacts, the C4 beep and the round stingers.
 
 ## Requirements
 
@@ -53,6 +59,7 @@ Command line flags go after `--`:
 | `--quality=low\|medium\|high\|ultra` | shadow/light/SSAO budget |
 | `--no-mouse` | never capture the mouse (handy for screenshots) |
 | `--team=t\|ct` | team the player spawns on |
+| `--spectate` | park the player and let the bots play both sides |
 | `--list-maps` | print every converted map and quit |
 
 ### Controls
@@ -64,10 +71,11 @@ Command line flags go after `--`:
 | Ctrl / C | crouch |
 | Shift | walk |
 | Mouse 1 / 2 | fire / alt-fire (scope) |
-| R | reload |
+| R | reload (also restarts the match once it is over) |
 | 1–5 | primary, secondary, knife, grenade, C4 |
 | Mouse wheel | cycle weapons |
 | B | buy menu (freeze time + first 20 s) |
+| E (use) | plant the C4 / defuse it (hold, standing still) |
 | Tab | scoreboard |
 | F3 | FPS / draw calls |
 | Esc | release mouse |
@@ -98,7 +106,27 @@ scripts/round/             round + economy state machine
 scripts/ui/                HUD, buy menu, scoreboard
 tools/goldsrc/             BSP30 / WAD3 parsers, csmap writer
 tools/cs2go/               CS2 model fetcher
+tools/audio/               sound-effect synthesiser
+tools/check_rounds.sh      round-flow regression suite (all 15 maps)
+.github/workflows/         gdlint + round-flow CI
 ```
+
+## Tests
+
+```bash
+gdlint $(find scripts -name '*.gd')     # style + a subset of parse errors
+tools/check_rounds.sh                   # every map must resolve a round
+tools/check_rounds.sh de_dust2 de_nuke  # or a subset
+```
+
+`check_rounds.sh` boots each map headless with `--spectate`, lets the bots play
+and fails if no round reaches a result inside the frame budget. That is
+deliberately the *only* assertion: the bot bugs this project actually hit were
+all variants of "the round never ends" (a wedged carrier, a re-randomised goal
+every frame, a spawn with no floor), and a nondeterministic bot match cannot
+support anything finer-grained. `gdlint` alone is not enough — it misses
+duplicate function names and some parse errors, which is why the suite boots
+the real engine.
 
 ## Notes / known limits
 
@@ -110,4 +138,7 @@ tools/cs2go/               CS2 model fetcher
   per-map counts are in `assets/maps/manifest.json`.
 * Baked GoldSrc light is applied as mesh vertex colour; there is no dynamic
   light baking in engine, so moving objects do not cast baked shadows.
-* Audio, hostages and the escape objective are not implemented yet.
+* Hostages and the `cs_*` escape objective are not implemented; only the
+  bomb-defusal game mode exists.
+* Bots are single-mesh primitives, not the retail player models.
+* There is no netcode: the human is a local client, the bots run in-process.

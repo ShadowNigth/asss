@@ -23,6 +23,12 @@ var weapon_label: Label
 var hint_label: Label
 var death_label: Label
 var fps_label: Label
+var objective_label: Label
+var _objective_bar: ProgressBar
+var kill_feed: VBoxContainer
+var banner_label: Label
+var _banner_time := 0.0
+var match_over_label: Label
 var hit_marker_time := 0.0
 var show_fps := false
 
@@ -33,6 +39,9 @@ func setup(game_ref: Node3D, player_ref: PlayerController, state: MatchState) ->
 	match_state = state
 	layer = 10
 	_build()
+	if player_ref != null:
+		player_ref.objective_progress.connect(show_objective)
+		player_ref.objective_cancelled.connect(hide_objective)
 
 
 func _build() -> void:
@@ -69,6 +78,31 @@ func _build() -> void:
 	fps_label = _label(Vector2(-120, 12), 14, HORIZONTAL_ALIGNMENT_RIGHT)
 	fps_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	fps_label.visible = false
+	objective_label = _label(Vector2(-300, 70), 18, HORIZONTAL_ALIGNMENT_CENTER)
+	objective_label.set_anchors_preset(Control.PRESET_CENTER)
+	objective_label.visible = false
+	_objective_bar = ProgressBar.new()
+	_objective_bar.set_anchors_preset(Control.PRESET_CENTER)
+	_objective_bar.position = Vector2(-110, 100)
+	_objective_bar.custom_minimum_size = Vector2(220, 14)
+	_objective_bar.show_percentage = false
+	_objective_bar.max_value = 1.0
+	_objective_bar.visible = false
+	root.add_child(_objective_bar)
+	kill_feed = VBoxContainer.new()
+	kill_feed.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	kill_feed.position = Vector2(-320, 20)
+	kill_feed.custom_minimum_size = Vector2(300, 0)
+	kill_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	kill_feed.alignment = BoxContainer.ALIGNMENT_END
+	root.add_child(kill_feed)
+	banner_label = _label(Vector2(-400, -120), 30, HORIZONTAL_ALIGNMENT_CENTER)
+	banner_label.set_anchors_preset(Control.PRESET_CENTER)
+	banner_label.visible = false
+	match_over_label = _label(Vector2(-420, -30), 34, HORIZONTAL_ALIGNMENT_CENTER)
+	match_over_label.set_anchors_preset(Control.PRESET_CENTER)
+	match_over_label.custom_minimum_size = Vector2(840, 0)
+	match_over_label.visible = false
 
 
 func _label(offset: Vector2, size: int, alignment: int) -> Label:
@@ -87,6 +121,10 @@ func _label(offset: Vector2, size: int, alignment: int) -> Label:
 
 
 func _process(delta: float) -> void:
+	if _banner_time > 0.0:
+		_banner_time -= delta
+		if _banner_time <= 0.0 and banner_label != null:
+			banner_label.visible = false
 	if player == null or not is_instance_valid(player):
 		return
 	health_label.text = "%d HP" % player.health if player.armor <= 0 else "%d HP  %d AP" % [player.health, player.armor]
@@ -124,6 +162,72 @@ func _process(delta: float) -> void:
 	radar.player = player
 	radar.bots = game.bots if game != null else []
 	radar.queue_redraw()
+
+
+func add_kill(victim: String, killer: String, weapon: String, headshot: bool) -> void:
+	## One line in the top-right kill feed, retired after a few seconds.
+	if kill_feed == null:
+		return
+	var line := Label.new()
+	line.add_theme_font_size_override("font_size", 15)
+	var colour := Color(0.85, 0.88, 0.92)
+	if killer != "" and player != null and killer == player.player_name:
+		colour = Color(0.55, 1.0, 0.6)
+	elif victim == (player.player_name if player != null else ""):
+		colour = Color(1.0, 0.45, 0.4)
+	line.add_theme_color_override("font_color", colour)
+	line.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	line.add_theme_constant_override("shadow_offset_x", 2)
+	line.add_theme_constant_override("shadow_offset_y", 2)
+	var marker := " [HS]" if headshot else ""
+	line.text = "%s  ▸  %s%s" % [killer if killer != "" else "world", victim, marker]
+	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	kill_feed.add_child(line)
+	while kill_feed.get_child_count() > 5:
+		kill_feed.get_child(0).queue_free()
+	var timer := get_tree().create_timer(6.0)
+	timer.timeout.connect(func() -> void:
+		if is_instance_valid(line):
+			line.queue_free())
+
+
+func show_match_over(winner: String, score_t: int, score_ct: int) -> void:
+	## Final screen: the result and the fact you can start again with R.
+	if match_over_label == null:
+		return
+	var line := "TERRORISTS WIN" if winner == "t" else "COUNTER-TERRORISTS WIN"
+	match_over_label.text = "%s\n%d : %d\n\npress R to play again" % [line, score_t, score_ct]
+	match_over_label.visible = true
+
+
+func hide_match_over() -> void:
+	if match_over_label != null:
+		match_over_label.visible = false
+
+
+func show_banner(text: String) -> void:
+	if banner_label == null:
+		return
+	banner_label.text = text
+	banner_label.visible = true
+	_banner_time = 5.0
+
+
+func show_objective(progress: float, label: String) -> void:
+	## Plant / defuse progress while the use key is held.
+	if objective_label == null:
+		return
+	objective_label.visible = true
+	objective_label.text = label.capitalize()
+	_objective_bar.visible = progress > 0.0
+	_objective_bar.value = progress
+
+
+func hide_objective() -> void:
+	if objective_label == null:
+		return
+	objective_label.visible = false
+	_objective_bar.visible = false
 
 
 func show_death(killer: String) -> void:
