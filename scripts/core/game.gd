@@ -42,6 +42,7 @@ func _ready() -> void:
 		match_state.start()
 	ready_boot = true
 	if Cfg.telemetry_interval > 0.0:
+		print("[telemetry] sound ", Sound.summary())
 		for team in ["t", "ct"]:
 			var pool: Array = map_loader.spawn_pool(team)
 			var listing := PackedStringArray()
@@ -354,7 +355,7 @@ func _build_ui() -> void:
 
 func _on_bomb_exploded() -> void:
 	## Everything inside the blast radius dies; armour does not help.
-	Sound.play_at("explosion", match_state.bomb_position, 2.0, 1.0, 120.0)
+	Sound.play_foley("c4_explode", match_state.bomb_position, true, 3.0, 160.0)
 	var radius := Cfg.BOMB_DAMAGE_RADIUS * Cfg.U2M
 	for agent in agents:
 		if agent == null or not is_instance_valid(agent) or not agent.alive:
@@ -376,7 +377,7 @@ func _tick_bomb_beep(delta: float) -> void:
 		return
 	var fuse := match_state.bomb_timer
 	_beep_timer = 0.28 if fuse < 10.0 else (0.6 if fuse < 20.0 else 1.0)
-	Sound.play_at("beep", match_state.bomb_position, -6.0, 1.0, 40.0)
+	Sound.play_at("beep", match_state.bomb_position, -8.0, 1.0, 30.0)
 
 
 func _update_bomb_marker() -> void:
@@ -427,7 +428,8 @@ func _on_player_landed(impact_speed: float) -> void:
 
 
 func _on_bomb_planted(_site: String, _timer: float) -> void:
-	Sound.play("plant", -2.0)
+	# Retail plant foley, then the first of the countdown beeps.
+	Sound.play_foley("c4_initiate", match_state.bomb_position, true, -2.0)
 
 
 func _on_bomb_defused() -> void:

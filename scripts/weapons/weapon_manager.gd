@@ -160,7 +160,7 @@ func _throw_grenade(id: String) -> void:
 	grenade.kind = id
 	get_tree().current_scene.add_child(grenade)
 	grenade.launch(origin, direction, 18.0, controller.player_name, controller.team)
-	Sound.play("switch", -6.0, 1.0)
+	Sound.play_foley("grenade_throw", origin, false, -3.0)
 	if state.clip <= 0:
 		inventory.erase(id)
 		var remaining := _owned_slots()
@@ -182,7 +182,7 @@ func _melee() -> void:
 
 
 func start_reload() -> void:
-	Sound.play("reload", -6.0, randf_range(0.95, 1.05))
+	Sound.play_reload(current_id)
 	var state := current()
 	if state == null:
 		return
@@ -244,6 +244,7 @@ func _update_recoil(delta: float) -> void:
 
 
 func _toggle_zoom() -> void:
+	Sound.play_foley("zoom_in" if _zoom == 0 else "zoom_out", controller.eye_position(), false, -8.0)
 	var data := current_data()
 	var zooms: Array = data.get("zoom_fovs", []) as Array
 	if zooms.is_empty():

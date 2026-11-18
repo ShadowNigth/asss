@@ -98,6 +98,8 @@ func _physics_process(delta: float) -> void:
 	var into := velocity.dot(normal)
 	velocity -= normal * into * (1.0 + RESTITUTION)
 	velocity *= FRICTION
+	if velocity.length() > 1.2:
+		Sound.play_foley("grenade_bounce", global_position, true, -10.0, 25.0)
 	if velocity.length() < 0.6 and absf(normal.y) > 0.7:
 		_resting = true
 	if _light != null:
@@ -133,7 +135,13 @@ func detonate() -> void:
 					target.flash()
 	elif kind == "smokegrenade":
 		_smoke(effects)
-	Sound.play_at("explosion" if damage > 0.0 else "impact", global_position, -4.0, 1.0, 40.0)
+	match kind:
+		"flashbang":
+			Sound.play_foley("flash_explode", global_position, true, 0.0, 90.0)
+		"smokegrenade":
+			Sound.play_foley("flash_explode", global_position, true, -6.0, 40.0)
+		_:
+			Sound.play_foley("he_explode", global_position, true, 0.0, 90.0)
 	queue_free()
 
 

@@ -34,7 +34,9 @@ viewmodels for the first-person rig.
   `gfx/env` faces, fog/mood per map, a CS-style HUD with radar, buy menu,
   scoreboard, kill feed and round banner, blocky but visible soldier models
   for the bots, muzzle flashes, and synthesised audio for every weapon class,
-  footsteps, bullet impacts, the C4 beep and the round stingers.
+  footsteps, bullet impacts, the C4 beep and the round stingers. Weapon
+  reports, reloads and explosion foley are the retail CS audio imported from
+  the `archi` pack (see [`docs/ASSETS.md`](docs/ASSETS.md)).
 
 ## Requirements
 
@@ -111,7 +113,7 @@ scripts/round/             round + economy state machine
 scripts/ui/                HUD, buy menu, scoreboard
 tools/goldsrc/             BSP30 / WAD3 parsers, csmap writer
 tools/cs2go/               CS2 model fetcher
-tools/audio/               sound-effect synthesiser
+tools/audio/               sound-effect synthesiser + retail audio importer
 tools/check_rounds.sh      round-flow regression suite (all 15 maps)
 .github/workflows/         gdlint + round-flow CI
 ```

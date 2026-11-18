@@ -13,7 +13,8 @@ assets/
   maps/<map>/sky.png           retail skybox reprojected to equirectangular
   maps/manifest.json           per-map conversion summary
   cs2go/models/…               viewmodels, gloves, knife, first-person hands
-  audio/*.wav                  synthesised effects (shots, steps, C4, stingers)
+  audio/*.wav                  synthesised effects (steps, impacts, stingers)
+  audio/shots/ audio/reloads/ audio/foley/   imported retail weapon audio
 ```
 
 ## Sources
@@ -124,14 +125,52 @@ python3 tools/audio/make_sounds.py
 
 ## Audio
 
-There is no retail sound data in the sources above, so every effect under
-`assets/audio` is synthesised by `tools/audio/make_sounds.py` from seeded noise
-and oscillators: five weapon-report classes, knife, reload, three footstep
-variants, landing, world impact, flesh hit, the C4 beep/plant/defuse cues, the
-explosion, and win/loss stingers. `scripts/core/sound.gd` maps each weapon to
-one of the shot classes and plays everything else positionally through an
-8-voice pool, so a distant firefight is quieter and panned by the listener.
+Audio comes from two places.
+
+**The weapon pack.** `ShadowNigth/archi` carries the retail CS 1.6 `sound/`
+tree -- a distinct report per weapon -- plus the CS:GO reload/draw kits. That
+repo is 3.9 GB (it also vendors the CS:GO weapon models), so it is not vendored
+here; `tools/audio/import_weapon_sounds.py` takes a clone and writes only what
+the game fires:
+
+```
+assets/audio/shots/<weapon>.wav     one retail report per weapon (23)
+assets/audio/reloads/<weapon>.wav   magazine foley from the CS:GO kits (23)
+assets/audio/foley/*.wav            C4, HE/flash blasts, throws, pin pulls, scopes
+```
+
+A sparse clone is enough:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+    https://github.com/ShadowNigth/archi.git /tmp/archi
+cd /tmp/archi && git sparse-checkout set sound
+python3 tools/audio/import_weapon_sounds.py --source /tmp/archi
+```
+
+The retail files are 22.05 kHz mono with long silent tails (a 0.13 s M4A1
+report ships inside a 0.80 s file), so the importer trims them, caps their
+length, normalises to -1 dBFS and resamples to 44.1 kHz. The mapping from
+project ids to retail names is explicit in the script -- the pack's names do
+not line up (`tmp-1` is the TMP, `sg550-1` the SG-550, and `m4a1-1` is the
+*silenced* take, so the M4A1 uses `m4a1_unsil-1`).
+
+**The synthesised fallback.** `tools/audio/make_sounds.py` builds the rest from
+seeded noise and oscillators: footstep variants, landing, world impact, flesh
+hit, the C4 countdown beep, the knife and the win/loss stingers. The pack ships
+no knife foley and no C4 countdown loop, so those stay synthesised. The same
+set doubles as a complete fallback for a checkout where the import has not been
+run -- `scripts/core/sound.gd` loads the retail files when they exist and the
+synthesised one of the same name otherwise.
 
 Both scripts are idempotent and need `numpy` + `Pillow` (and `gh` for the CS2
 mirror, whose blobs are pulled through the GitHub API because the sandbox
 cannot reach `raw.githubusercontent.com`).
+
+`make_sounds.py` is safe to re-run: it only writes its own top-level files and
+never touches `shots/`, `reloads/` or `foley/`, so the imported retail audio
+survives a regeneration of the synthesised set.
+
+The pack's licence is whatever its author published -- it is a redistribution of
+Valve's CS 1.6 / CS:GO audio, so treat the imported files as you would any other
+extracted game asset and do not relicense them.
