@@ -1,0 +1,330 @@
+{
+  "files": {
+    "agents/view-hands.glb": {
+      "animations": [],
+      "bytes": 6720632,
+      "extensions": [
+        "EXT_texture_webp"
+      ],
+      "images": 9,
+      "length": 6720632,
+      "meshes": 2,
+      "nodes": 80,
+      "version": 2
+    },
+    "animations/knives/knife-ct.glb": {
+      "animations": [
+        "inventory_inspect",
+        "animation/anims/viewmodel/knife/_default_knife/idle_knife",
+        "animation/anims/viewmodel/knife/_default_knife/idle2_knife",
+        "animation/anims/viewmodel/knife/_default_knife/draw_knife",
+        "animation/anims/viewmodel/knife/_default_knife/light_hit1_knife",
+        "animation/anims/viewmodel/knife/_default_knife/light_hit2_knife",
+        "animation/anims/viewmodel/knife/_default_knife/light_miss1_knife",
+        "animation/anims/viewmodel/knife/_default_knife/light_miss2_knife",
+        "animation/anims/viewmodel/knife/_default_knife/heavy_hit1_knife",
+        "animation/anims/viewmodel/knife/_default_knife/heavy_miss1_knife",
+        "animation/anims/viewmodel/knife/_default_knife/lookat01_knife"
+      ],
+      "bytes": 2447900,
+      "extensions": [
+        "EXT_texture_webp"
+      ],
+      "images": 2,
+      "length": 2447900,
+      "meshes": 1,
+      "nodes": 62,
+      "version": 2
+    },
+    "viewmodels/ak-47.glb": {
+      "animations": [],
+      "bytes": 2889940,
+      "extensions": [
+        "EXT_texture_webp"
+      ],
+      "images": 6,
+      "length": 2889940,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/aug.glb": {
+      "animations": [],
+      "bytes": 1532008,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 12,
+      "length": 1532008,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/awp.glb": {
+      "animations": [],
+      "bytes": 3119888,
+      "extensions": [
+        "EXT_texture_webp"
+      ],
+      "images": 6,
+      "length": 3119888,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/deagle.glb": {
+      "animations": [],
+      "bytes": 1581308,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1581308,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/elite.glb": {
+      "animations": [],
+      "bytes": 1128748,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1128748,
+      "meshes": 1,
+      "nodes": 18,
+      "version": 2
+    },
+    "viewmodels/famas.glb": {
+      "animations": [],
+      "bytes": 1684760,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1684760,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/fiveseven.glb": {
+      "animations": [],
+      "bytes": 1184188,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1184188,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/galilar.glb": {
+      "animations": [],
+      "bytes": 1053148,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1053148,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/glock.glb": {
+      "animations": [],
+      "bytes": 1192496,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1192496,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/m249.glb": {
+      "animations": [],
+      "bytes": 3809924,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 6,
+      "length": 3809924,
+      "meshes": 1,
+      "nodes": 40,
+      "version": 2
+    },
+    "viewmodels/m4a4.glb": {
+      "animations": [],
+      "bytes": 1079004,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1079004,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/mac10.glb": {
+      "animations": [],
+      "bytes": 953028,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 953028,
+      "meshes": 1,
+      "nodes": 23,
+      "version": 2
+    },
+    "viewmodels/mp5sd.glb": {
+      "animations": [],
+      "bytes": 1682240,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1682240,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/nova.glb": {
+      "animations": [],
+      "bytes": 1447868,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 6,
+      "length": 1447868,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/p250.glb": {
+      "animations": [],
+      "bytes": 843760,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 843760,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/p90.glb": {
+      "animations": [],
+      "bytes": 1171704,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 1171704,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/ssg08.glb": {
+      "animations": [],
+      "bytes": 1820688,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 9,
+      "length": 1820688,
+      "meshes": 1,
+      "nodes": 9,
+      "version": 2
+    },
+    "viewmodels/tec9.glb": {
+      "animations": [],
+      "bytes": 939372,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 939372,
+      "meshes": 1,
+      "nodes": 8,
+      "version": 2
+    },
+    "viewmodels/ump45.glb": {
+      "animations": [],
+      "bytes": 953772,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 953772,
+      "meshes": 1,
+      "nodes": 10,
+      "version": 2
+    },
+    "viewmodels/usp-s.glb": {
+      "animations": [],
+      "bytes": 2169016,
+      "extensions": [
+        "EXT_texture_webp"
+      ],
+      "images": 3,
+      "length": 2169016,
+      "meshes": 1,
+      "nodes": 10,
+      "version": 2
+    },
+    "viewmodels/xm1014.glb": {
+      "animations": [],
+      "bytes": 2983484,
+      "extensions": [
+        "KHR_mesh_quantization",
+        "EXT_meshopt_compression",
+        "EXT_texture_webp"
+      ],
+      "images": 6,
+      "length": 2983484,
+      "meshes": 1,
+      "nodes": 10,
+      "version": 2
+    }
+  },
+  "repo": "3kh0/cs2go",
+  "revision": "89f2e5b584871cb37122c9ebfb8da58eb4e1faec"
+}

@@ -1,0 +1,50 @@
+name: checks
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: gdlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "gdtoolkit==4.*"
+      - name: Lint all GDScript
+        run: gdlint $(find scripts -name '*.gd')
+
+  rounds:
+    name: round flow (${{ matrix.map }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        map:
+          - de_dust2
+          - de_inferno
+          - de_nuke
+          - de_cbble
+          - de_train
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq unzip
+          curl -sSLo godot.zip \
+            https://github.com/godotengine/godot-builds/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          mv Godot_v4.4.1-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+      - name: Import project (builds the script class cache)
+        run: godot --headless --path . --import
+      - name: Round must resolve
+        run: FRAMES=20000 GODOT=godot tools/check_rounds.sh ${{ matrix.map }}

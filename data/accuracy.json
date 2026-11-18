@@ -1,0 +1,23 @@
+{
+  "airborne_decay": 4.5,
+  "crouching": {
+    "base": -0.15,
+    "scale": 0.7
+  },
+  "jumping": {
+    "base": 6.0,
+    "scale": 5.0
+  },
+  "max_inaccuracy": 14.0,
+  "moving": {
+    "base": 2.2,
+    "scale": 2.6
+  },
+  "pellets_flat_spread": 1.0,
+  "recovery_rate": 7.0,
+  "spread_inches_at_100u": 0.55,
+  "standing": {
+    "base": 0.0,
+    "scale": 1.0
+  }
+}
